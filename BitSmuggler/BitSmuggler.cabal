@@ -20,17 +20,24 @@ library
   other-modules:       
     Network.BitSmuggler.Crypto
     Network.BitSmuggler.Utils
+    Network.BitSmuggler.BitTorrentSimulator
 
   -- other-extensions:    
   build-depends:       base >=4.7 && <4.8
-                     , helligator ==0.1.*
-                     , cipher-aes ==0.2.9.*
-                     , bytestring ==0.10.*
-                     , crypto-cipher-types ==0.0.*
-                     , largeword ==1.2.*
-                     , binary ==0.7.1.*
-                     , byteable ==0.1.1.*
-                     , cereal ==0.4.1.*
-                     , crypto-random ==0.0.8.*
+                     , helligator >=0.1 && <0.2
+                     , cipher-aes >=0.2.9 && <0.3
+                     , bytestring >=0.10 && <0.11
+                     , crypto-cipher-types >=0.0.1 && <0.2
+                     , largeword >=1.2 && <1.3
+                     , binary >=0.7.1 && <0.8
+                     , byteable >=0.1.1 && <0.2
+                     , cereal >=0.4.1 && <0.5
+                     , crypto-random >=0.0.8 && <0.1
+                     , bittorrent-client-control >=0.1 && < 0.2
+                     , bert >=1.2.2 && <1.3
+                     , stm >=2.4.3 && <2.5
+                     , containers >=0.5.5 && <0.6
+                     , network >=2.6 && <2.7
+                     , async >=2.0.1 && <2.1
   hs-source-dirs:      src
   default-language:    Haskell2010
