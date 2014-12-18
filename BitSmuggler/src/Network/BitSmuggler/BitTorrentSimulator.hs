@@ -23,8 +23,10 @@ import Network.Socket
 import Debug.Trace
 import Control.Concurrent
 import Control.Concurrent.Async
-
 import Control.Exception
+
+import Network.TCP.Proxy.Client
+import Network.TCP.Proxy.Socks4
 
 {-
   simulates the network activity of a real bittorrent client
@@ -65,8 +67,13 @@ connectToPeer :: Maybe (InfoHash -> String -> PortNum -> IO ())
 
 rpcmod = "bittorrent"
 
-data Ops = AddMagnetOp | AddFileOp | ListOp | PauseOp | StopTorrentOp | SettingsOp
+data OpCode = AddMagnetOp | AddFileOp | ListOp | PauseOp | StopTorrentOp | SettingsOp
   deriving (Show, Eq, Read)
+
+data Op = AddMagnet InfoHash | AddFile String
+            | PauseAction InfoHash | StopAction InfoHash | SettingsAction
+
+
 
 instance BERT InfoHash where
   showBERT = BinaryTerm . Bin.encode 
@@ -136,27 +143,15 @@ newTorrent th source = do
   let connData = resource th source
   let t = connTorrent connData
   cmdChan <- newTChanIO 
-  atomically $ modifyTVar (torrents th) (Map.insert (torrentID t)(t, cmdChan))
+  atomically $ modifyTVar (torrents th) (Map.insert (torrentID t) (t, cmdChan))
   forkIO $ do
     asyncTorrent <- async $ doTorrent cmdChan connData
     final <- waitCatch $ asyncTorrent
     atomically $ modifyTVar (torrents th) (Map.delete (torrentID t))
-    
 
 doTorrent cmdChan connData = do
   return ()
 
-testServer = do
-  tchan <- newTChanIO
-  ts <- newTVarIO (Map.fromList [(torrentID fooTorrent, (fooTorrent, tchan))])
-  let torrentHandler = TorrentHandler ts undefined
-  runServer torrentHandler 1100
-
-testClient = do
-  c <- clientConn "127.0.0.1" 1100
-  ts <- listTorrents c
-  P.putStrLn $ show ts
-  
 
 data Cmd = Stop | Pause | Resume deriving (Eq, Show)
 
@@ -164,7 +159,7 @@ data ConnectionData = ConnectionData {
                                        connTorrent :: Torrent
                                      , dataFile :: FilePath
                                      , peerAddr :: String
-                                     , peerPort :: Word16}
+                                     , peerPort :: Word16 }
   deriving (Show)
 
 
@@ -174,3 +169,18 @@ data TorrentHandler = TorrentHandler {
 }
 
 portNumEndianness = (\(Right v) -> v) . runGet getWord16be  . runPut . putWord16host
+
+
+-- DEUBG CODE
+testClient = do
+  c <- clientConn "127.0.0.1" 1100
+  ts <- listTorrents c
+  P.putStrLn $ show ts
+
+testServer = do
+  tchan <- newTChanIO
+  ts <- newTVarIO (Map.fromList [(torrentID fooTorrent, (fooTorrent, tchan))])
+  let torrentHandler = TorrentHandler ts undefined
+  runServer torrentHandler 1100
+
+
