@@ -40,5 +40,14 @@ library
                      , network >=2.6 && <2.7
                      , async >=2.0.1 && <2.1
                      , tcp-proxy >=0.1 && <0.2
+                     , conduit-extra >=1.1.4 && <1.2
+                     , conduit >=1.2.3 && <1.3
+                     , resourcet >=1.1.3 && <1.2
+                     , transformers >=0.4.2 && <0.5
+                     , cereal-conduit >=0.7.2 && <0.8
+                     , either >=4.3.2 && <4.4
+                     , mtl >=2.2.1 && <2.3
+                     , hslogger >=1.2.6 && <1.3
+--                     , derive >=2.5.18 && <2.6
   hs-source-dirs:      src
   default-language:    Haskell2010

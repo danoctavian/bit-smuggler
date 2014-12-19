@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, OverloadedStrings #-}
 
 module Network.BitSmuggler.BitTorrentSimulator where
 
@@ -12,9 +12,12 @@ import Data.Binary as Bin
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM.TVar
 import Control.Concurrent.STM
+import Control.Monad
+import Control.Monad.Trans
+import Control.Monad.Trans.Resource
 import Data.Map.Strict as Map
 import Data.Serialize as DS
-
+import Control.Monad.IO.Class
 import Network.BERT.Server
 import Network.BERT.Client
 import Data.BERT.Types
@@ -24,9 +27,20 @@ import Debug.Trace
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception
-
+import Data.Conduit as DC
+import Data.Conduit.Cereal
+import Data.Conduit.List as CL
+import Data.Maybe
 import Network.TCP.Proxy.Client
-import Network.TCP.Proxy.Socks4
+import Network.TCP.Proxy.Socks4 as Socks4
+import Data.Conduit.Binary
+import Data.Conduit.Network
+import Control.Monad
+import System.Log.Logger
+ 
+import System.IO
+import Control.Monad.Trans.Either
+
 
 {-
   simulates the network activity of a real bittorrent client
@@ -37,43 +51,25 @@ import Network.TCP.Proxy.Socks4
     * traffic replay
     * proxy usage
     * initiates connections; receives connections
+  lacks:
+    tracker/dht traffic immitation
   
     Implementation
-    * best way for haskell rpc or rest or whatever that is
-       -- messagepack haskell seems pretty easy -- ppl don't bump dependencies...
-       -- bert - some random shit that actually works 
     * commands come in; pause/start whatever. how to do that with a worker thread?
        tchan that is read at each loop of its activity to check for commands
     * traffic replay: traffic is big - load it from file need chunks with their timestamps;
       can i really use the timestamps - what if my own falls behind - challenge make sure it doesn't? or just ignore timestamps and keep sending at quick pace == FOR NOW IGNORE TIMESTAMPTS - just send chunks in sequence 
-    
-    * lay it out as a conduit who reads from file and sends to a socket, while checking an stm chan for other tasks - pause, stop (throttle?), unpause
+
+   NON-DEFENSIVE programming - this code crashes if not given right input - it's only used for testing to it needen't be robust    
 -}
 
-{- rpc interface
-addMagnetLink :: String -> IO ()
-addTorrentFile :: FilePath -> IO ()
-listTorrents :: IO [Torrent]
-pauseTorrent :: InfoHash -> IO ()
-stopTorrent :: InfoHash -> IO ()
-setSettings :: [Setting] -> IO ()
-
- optional functionality
-connectToPeer :: Maybe (InfoHash -> String -> PortNum -> IO ())
-
--}
+logger = "BitTorrentSimulator"
 
 -- RPC aspects
-
 rpcmod = "bittorrent"
 
 data OpCode = AddMagnetOp | AddFileOp | ListOp | PauseOp | StopTorrentOp | SettingsOp
   deriving (Show, Eq, Read)
-
-data Op = AddMagnet InfoHash | AddFile String
-            | PauseAction InfoHash | StopAction InfoHash | SettingsAction
-
-
 
 instance BERT InfoHash where
   showBERT = BinaryTerm . Bin.encode 
@@ -97,7 +93,7 @@ hoistBERTErrIO (Left e) = case e of
 
 clientConn :: String -> PortNum -> IO TorrentClientConn
 clientConn url port = do
-  t <- tcpClient url (PortNum . portNumEndianness $ port)
+  t <- tcpClient url (PortNum . portNumEndianess $ port)
   let rpc name params = call t rpcmod (show name) params >>= hoistBERTErrIO
   return $ TorrentClientConn {
       addMagnetLink = rpc AddMagnetOp . (:[])
@@ -109,22 +105,45 @@ clientConn url port = do
     , connectToPeer = Nothing
   }
 
--- server side
+
+type TorrentFileID = Either String InfoHash
+data Config = Config {
+    resourceMap :: Map.Map TorrentFileID ConnectionData
+  , rpcPort :: Word16
+  , peerPort :: Word16
+} deriving (Show)
+
+runClient conf = do
+  tchan <- newTChanIO
+  ts <- newTVarIO (Map.fromList [(torrentID fooTorrent, (fooTorrent, tchan))])
+  let th = TorrentHandler ts 
+                       (fromJust . (\k -> Map.lookup k (resourceMap conf)))
+  concurrently (runServer th (rpcPort conf)) (listenForPeers $ (peerPort conf))
+
+listenForPeers port = do
+  runTCPServer (serverSettings (fromIntegral port) "*") $ \appData -> do
+    debugM logger "received connection. draining socket.."
+    (appSource appData) $$ awaitForever return
+
+-- command server (rpc interface to send commands to the client)
 runServer th port = do
- s <- tcpServer (PortNum . portNumEndianness $ port)
+ s <- tcpServer (PortNum . portNumEndianess $ port)
  serve s $ dispatch th 
 
 dispatch th "bittorrent" op params = case (read op, params) of
   (AddMagnetOp, [m]) -> do
+    let (Right n) = readBERT m
+    newTorrent th (Right $ n)
     return $ Success $ showBERT ()
-    
+  (AddFileOp, [fname]) -> do
+    let (Right n) = readBERT fname
+    newTorrent th (Left $ n)
+    return $ Success $ showBERT ()
   (ListOp, []) -> do
     fmap (Success . showBERT . P.map (fst . snd) . Map.toList)
           $ atomically $ readTVar $ torrents th
   (PauseOp, [ihTerm]) -> messageTorrent th Pause ihTerm
   (StopTorrentOp, [ihTerm]) -> messageTorrent th Stop ihTerm
-dispatch th "calc" _ _ =
-  return NoSuchFunction
 dispatch th _ _ _ =
   return NoSuchModule
 
@@ -149,8 +168,48 @@ newTorrent th source = do
     final <- waitCatch $ asyncTorrent
     atomically $ modifyTVar (torrents th) (Map.delete (torrentID t))
 
+
 doTorrent cmdChan connData = do
-  return ()
+  let cd = connData
+  runProxyTCPClient (BSC.pack . fst . proxyAddr $ cd) (snd . proxyAddr $ cd)
+    (Socks4.clientProtocol (read . fst . peerAddr $ cd, snd . peerAddr $ cd) CONNECT)
+    $ \sink resSrc remoteConn -> do
+      withFile (dataFile connData) ReadMode $ \file -> do
+        sourceHandle file $= conduitGet (DS.get :: DS.Get NetworkChunk)
+          $= emitChunks cmdChan $$ sink
+        return ()
+      return ()
+
+
+data NetworkChunk = NetworkChunk BS.ByteString
+
+instance Serialize NetworkChunk where
+  get = do
+    len <- getWord32be
+    content <- getBytes (fromIntegral len)
+    return $ NetworkChunk content
+  put = undefined
+
+emitChunks cmdChan = go >> return () where
+  go = runEitherT $ forever $ do
+    maybeCmd <- liftIO $ atomically $ tryReadTChan cmdChan
+    case maybeCmd of
+      Just cmd -> takeCmd cmdChan cmd 
+      Nothing -> return () -- keep going
+    upstreamChunk <- lift $ await
+    case upstreamChunk of 
+      Just (NetworkChunk bs) -> (lift $ DC.yield bs)
+      Nothing -> exit () 
+
+
+takeCmd cmdChan cmd = case cmd of
+  Stop -> exit () -- finish up
+  -- on pause it performs a blocking read on the cmd channel til other
+  -- commands are received
+  Pause -> (liftIO $ atomically $ readTChan cmdChan) >>= takeCmd cmdChan
+  Resume -> return () -- proceed 
+
+exit = left
 
 
 data Cmd = Stop | Pause | Resume deriving (Eq, Show)
@@ -158,18 +217,17 @@ data Cmd = Stop | Pause | Resume deriving (Eq, Show)
 data ConnectionData = ConnectionData {
                                        connTorrent :: Torrent
                                      , dataFile :: FilePath
-                                     , peerAddr :: String
-                                     , peerPort :: Word16 }
+                                     , peerAddr :: (String, Word16)
+                                     , proxyAddr :: (String, Word16)}
   deriving (Show)
 
 
 data TorrentHandler = TorrentHandler {
     torrents :: TVar (Map InfoHash (Torrent, TChan Cmd))
-  , resource :: Either String InfoHash -> ConnectionData
+  , resource :: TorrentFileID -> ConnectionData
 }
 
-portNumEndianness = (\(Right v) -> v) . runGet getWord16be  . runPut . putWord16host
-
+portNumEndianess = (\(Right v) -> v) . runGet getWord16be  . runPut . putWord16host
 
 -- DEUBG CODE
 testClient = do
@@ -182,5 +240,3 @@ testServer = do
   ts <- newTVarIO (Map.fromList [(torrentID fooTorrent, (fooTorrent, tchan))])
   let torrentHandler = TorrentHandler ts undefined
   runServer torrentHandler 1100
-
-
