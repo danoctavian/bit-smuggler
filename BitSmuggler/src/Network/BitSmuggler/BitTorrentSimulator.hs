@@ -33,13 +33,16 @@ import Data.Conduit.List as CL
 import Data.Maybe
 import Network.TCP.Proxy.Client
 import Network.TCP.Proxy.Socks4 as Socks4
+import Network.TCP.Proxy.Server as Proxy
 import Data.Conduit.Binary
 import Data.Conduit.Network
 import Control.Monad
 import System.Log.Logger
  
 import System.IO
+import System.Random
 import Control.Monad.Trans.Either
+import Network.BitSmuggler.Utils
 
 
 {-
@@ -53,12 +56,6 @@ import Control.Monad.Trans.Either
     * initiates connections; receives connections
   lacks:
     tracker/dht traffic immitation
-  
-    Implementation
-    * commands come in; pause/start whatever. how to do that with a worker thread?
-       tchan that is read at each loop of its activity to check for commands
-    * traffic replay: traffic is big - load it from file need chunks with their timestamps;
-      can i really use the timestamps - what if my own falls behind - challenge make sure it doesn't? or just ignore timestamps and keep sending at quick pace == FOR NOW IGNORE TIMESTAMPTS - just send chunks in sequence 
 
    NON-DEFENSIVE programming - this code crashes if not given right input - it's only used for testing to it needen't be robust    
 -}
@@ -174,12 +171,12 @@ doTorrent cmdChan connData = do
   runProxyTCPClient (BSC.pack . fst . proxyAddr $ cd) (snd . proxyAddr $ cd)
     (Socks4.clientProtocol (read . fst . peerAddr $ cd, snd . peerAddr $ cd) CONNECT)
     $ \sink resSrc remoteConn -> do
-      withFile (dataFile connData) ReadMode $ \file -> do
+      -- TODO: now sending the file contents in a loop; this doesn't really work
+      -- bc initial handshake gets repeated; change this
+      withFile (dataFile connData) ReadMode $ \file -> forever $ do
         sourceHandle file $= conduitGet (DS.get :: DS.Get NetworkChunk)
           $= emitChunks cmdChan $$ sink
-        return ()
       return ()
-
 
 data NetworkChunk = NetworkChunk BS.ByteString
 
@@ -188,7 +185,7 @@ instance Serialize NetworkChunk where
     len <- getWord32be
     content <- getBytes (fromIntegral len)
     return $ NetworkChunk content
-  put = undefined
+  put (NetworkChunk bs) = putWord32be (fromIntegral $ BS.length bs) >> putByteString bs
 
 emitChunks cmdChan = go >> return () where
   go = runEitherT $ forever $ do
@@ -229,7 +226,60 @@ data TorrentHandler = TorrentHandler {
 
 portNumEndianess = (\(Right v) -> v) . runGet getWord16be  . runPut . putWord16host
 
--- DEUBG CODE
+-- DEBUG CODE
+
+testHash = Bin.decode $ BSL.replicate 20 0
+testDataFile = "/home/dan/repos/bitSmuggler/bit-smuggler/testdata/trafficSample00"
+
+localhost = "127.0.0.1"
+
+initiatorConf = Network.BitSmuggler.BitTorrentSimulator.Config {resourceMap = Map.empty, rpcPort = 2015, peerPort = 3001}
+
+testConnData = ConnectionData {connTorrent = Torrent  testHash "this is the filename"
+                              , dataFile = testDataFile
+                              , peerAddr = (localhost, peerPort initiatorConf)
+                              , proxyAddr = (localhost, 1080)}
+
+
+receiverConf = Network.BitSmuggler.BitTorrentSimulator.Config {
+                      resourceMap = Map.fromList [(Left testDataFile, testConnData)]
+                      , rpcPort = 2016, peerPort = 3002}
+
+initiatorPeer = do
+  runClient initiatorConf
+
+receiverPeer = do
+  runClient receiverConf
+
+initCaptureHook incFile outFile a1 a2 = do
+  incHook <- captureHook incFile
+  outHook <- captureHook outFile
+  return $ DataHooks incHook outHook 
+
+captureHook :: FilePath -> IO (BS.ByteString -> IO BS.ByteString)
+captureHook file = do
+  rgen <- newStdGen
+  let r = (fst $ random rgen) :: Int
+  tchan <- newTChanIO 
+  withFile (file P.++ (show r)) WriteMode $ \fileH -> do
+    sourceTChan tchan =$ (CL.map (DS.encode . NetworkChunk))  $$ sinkHandle fileH
+  return $ \bs -> atomically $ writeTChan tchan bs >> return bs
+ 
+
+trafficCapture = do
+  Proxy.run $ Proxy.Config { proxyPort = 1080
+            , initHook =  initCaptureHook "incomingCapture" "outgoingCapture"
+            , handshake = Socks4.serverProtocol
+       }
+
+trafficProxy = do
+  Proxy.run $ Proxy.Config { proxyPort = 1080
+            , initHook = (\_ _ -> return $ DataHooks return return) 
+            , handshake = Socks4.serverProtocol
+       }
+
+
+{-
 testClient = do
   c <- clientConn "127.0.0.1" 1100
   ts <- listTorrents c
@@ -240,3 +290,4 @@ testServer = do
   ts <- newTVarIO (Map.fromList [(torrentID fooTorrent, (fooTorrent, tchan))])
   let torrentHandler = TorrentHandler ts undefined
   runServer torrentHandler 1100
+-}
