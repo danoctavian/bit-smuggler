@@ -30,3 +30,8 @@ if' c a b = if c then a else b
 
 sourceTChan :: MonadIO m => TChan a -> Source m a
 sourceTChan chan = (liftIO $ atomically $ readTChan chan) >>= DC.yield
+
+-- PortNum from Network.Socket always assumes that whatever value
+-- passed into the constructor is a big-endian (newtwork byte order)
+-- call this on the value passed in to make it get what you actually mean
+portNumFixEndian = (\(Right v) -> v) . runGet getWord16be  . runPut . putWord16host
