@@ -1,0 +1,4 @@
+!/bin/sh
+
+# example tracker:  http://exampletracker.com/announce
+mktorrent -v -p -a $1 -o $2 $3

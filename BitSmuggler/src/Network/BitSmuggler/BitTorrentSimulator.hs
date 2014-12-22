@@ -261,20 +261,29 @@ captureHook file = do
   rgen <- newStdGen
   let r = (fst $ random rgen) :: Int
   tchan <- newTChanIO 
-  withFile (file P.++ (show r)) WriteMode $ \fileH -> do
-    sourceTChan tchan =$ (CL.map (DS.encode . NetworkChunk))  $$ sinkHandle fileH
+  debugM logger $ "setting up capture for " P.++ file
+  forkIO $ do
+    withFile (file P.++ (show r)) WriteMode $ \fileH -> do
+      sourceTChan tchan =$ (CL.map (DS.encode . NetworkChunk))  $$ sinkHandle fileH
+  debugM logger $ "done setting up capture"
+ 
   return $ \bs -> atomically $ writeTChan tchan bs >> return bs
  
 
 trafficCapture = do
+  updateGlobalLogger logger  (setLevel DEBUG)
   Proxy.run $ Proxy.Config { proxyPort = 1080
             , initHook =  initCaptureHook "incomingCapture" "outgoingCapture"
             , handshake = Socks4.serverProtocol
        }
 
+
+printChunk bs = debugM logger (show $ BS.length bs) >> return bs
+
 trafficProxy = do
+  updateGlobalLogger logger  (setLevel DEBUG)
   Proxy.run $ Proxy.Config { proxyPort = 1080
-            , initHook = (\_ _ -> return $ DataHooks return return) 
+            , initHook = (\_ _ -> return $ DataHooks printChunk printChunk) 
             , handshake = Socks4.serverProtocol
        }
 

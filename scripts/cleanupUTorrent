@@ -1,0 +1,3 @@
+!/bin/sh
+cd $1
+rm dht.dat* dht.feed* resume.dat* rss.dat* settings.dat* dht_feed.dat*
