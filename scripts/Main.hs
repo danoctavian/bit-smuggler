@@ -30,7 +30,7 @@ import Data.Conduit.Binary
 import Data.Conduit.List as CL
 import Data.Conduit as DC
 
-import Network.BitTorrent.Shepherd
+import Network.BitTorrent.Shepherd as Tracker
 import Network.BitTorrent.ClientControl
 import Network.BitTorrent.ClientControl.UTorrent
 import Network.BitSmuggler.BitTorrentSimulator as Sim
@@ -94,7 +94,7 @@ captureHook file = do
  
 
 trafficCapture = do
-  updateGlobalLogger logger  (setLevel DEBUG)
+--  updateGlobalLogger logger  (setLevel DEBUG)
   Proxy.run $ Proxy.Config { proxyPort = 1080
             , initHook =  initCaptureHook "incomingCapture" "outgoingCapture"
             , handshake = Socks4.serverProtocol
@@ -103,7 +103,6 @@ trafficCapture = do
 printChunk bs = debugM logger (show $ BS.length bs) >> return bs
 
 trafficProxy = do
-  updateGlobalLogger logger  (setLevel DEBUG)
   Proxy.run $ Proxy.Config { proxyPort = 1080
             , initHook = (\_ _ -> return $ DataHooks printChunk printChunk) 
             , handshake = Socks4.serverProtocol
@@ -131,8 +130,8 @@ milli = 10 ^ 6
 
 testRun = do
   updateGlobalLogger logger (setLevel DEBUG)
-  peerSeedTalk "/home/dan/tools/bittorrent/testtorrent"
-                       "/home/dan/tools/bittorrent/testtorrent"
+  peerSeedTalk "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_0/"
+                       "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_1/"
                        "/home/dan/testdata/sample.txt"
                        "/home/dan/testdata/sample100.torrent"
 
@@ -145,9 +144,15 @@ peerSeedTalk seedPath peerPath dataFilePath tFilePath = runResourceT $ do
     cleanUTorrentState seedPath oldData
     cleanUTorrentState peerPath oldData
     shelly $ cp dataFilePath seedPath --place file to be seeded
- 
-  tracker <- allocAsync $ async $ runTracker 6666
-  liftIO $ threadDelay $ 2 * milli
+
+  trackEvents <- liftIO $ newTChanIO 
+  tracker <- allocAsync $ async $ runTracker
+                        $ Tracker.Config {listenPort = 6666, events = Just trackEvents}
+
+  liftIO $ waitFor (== Booting) trackEvents
+  liftIO $ debugM logger "tracker is booting"
+
+--  liftIO $ threadDelay $ 2 * milli
 
   liftIO $ debugM logger "launching seeder..."
   seeder <- allocAsync $ runUTClient seedPath
@@ -156,20 +161,28 @@ peerSeedTalk seedPath peerPath dataFilePath tFilePath = runResourceT $ do
   seedConn <- liftIO $ makeUTorrentConn localhost webUIPortSeed  utorrentDefCreds
   liftIO $ addTorrentFile seedConn $ pathToString tFilePath
 
-  liftIO $ P.getLine
+  liftIO $ waitFor (\(AnnounceEv a) -> True) trackEvents
+  liftIO $ debugM logger "got announce"
   -- sleep for a while until that is announced; ideally i should put
-  -- some hooks in the tracker;
 
-{-
-  liftIO $ threadDelay $ 5 * milli
+  proxy <- allocAsync $ async $ trafficProxy
+  liftIO $ threadDelay $ 1 * milli
  
   peer <- allocAsync $ runUTClient peerPath
   liftIO $ threadDelay $ 1 * milli
+  liftIO $ debugM logger "launched peer. telling it to connect"
+
   peerConn <- liftIO $ makeUTorrentConn localhost webUIPortPeer utorrentDefCreds
+
+  liftIO $ setSettings peerConn [UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, UTP True, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1080, ProxyP2P True]
+
+  liftIO $ addTorrentFile peerConn $ pathToString tFilePath
+ 
+  liftIO $ P.getLine
 
   -- close procs
   release $ fst peer 
-  -}
+  release $ fst proxy
   release $ fst seeder
   release $ fst tracker
 
@@ -187,6 +200,11 @@ runUTClient path = async $ shelly $ chdir path
 
 -- treats an async as a resource that needs to be canceled on close
 allocAsync runAsync = allocate runAsync (liftIO . cancel) 
+
+waitFor cond chan = do
+  n <- atomically $ readTChan chan
+  if (cond n) then return n
+  else waitFor cond chan
 
 -- proc
 testProc = do
