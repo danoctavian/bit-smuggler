@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 import Prelude as P
 
 import Network.TCP.Proxy.Server
@@ -7,8 +9,11 @@ import Data.ByteString as BS
 import Data.ByteString.Lazy as BSL
 import Data.ByteString.Char8 as BSC
 import Data.ByteString.Lazy.Char8 as BSLC
+import Data.String
+import Data.Text as Txt
+import Control.Exception
 
-import System.IO
+import System.IO as Sys
 import System.Random
 
 import Network.TCP.Proxy.Client
@@ -18,17 +23,25 @@ import Data.Map.Strict as Map
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM.TVar
 import Control.Concurrent.STM
+import Control.Monad
 import System.Log.Logger
 
 import Data.Conduit.Binary
 import Data.Conduit.List as CL
 import Data.Conduit as DC
 
+import Network.BitTorrent.Shepherd
 import Network.BitTorrent.ClientControl
+import Network.BitTorrent.ClientControl.UTorrent
 import Network.BitSmuggler.BitTorrentSimulator as Sim
 import Network.BitSmuggler.Utils
 import Data.Serialize as DS
 import Control.Concurrent
+import Control.Concurrent.Async
+import qualified Filesystem.Path as FS
+
+import Shelly as Sh
+import Control.Monad.Trans.Resource
 
 {-
 
@@ -66,7 +79,7 @@ initCaptureHook incFile outFile a1 a2 = do
   outHook <- captureHook outFile
   return $ DataHooks incHook outHook 
 
-captureHook :: FilePath -> IO (BS.ByteString -> IO BS.ByteString)
+captureHook :: Sys.FilePath -> IO (BS.ByteString -> IO BS.ByteString)
 captureHook file = do
   rgen <- newStdGen
   let r = (fst $ random rgen) :: Int
@@ -87,7 +100,6 @@ trafficCapture = do
             , handshake = Socks4.serverProtocol
        }
 
-
 printChunk bs = debugM logger (show $ BS.length bs) >> return bs
 
 trafficProxy = do
@@ -97,4 +109,109 @@ trafficProxy = do
             , handshake = Socks4.serverProtocol
        }
 
+uTorrentStateFiles :: [String]
+uTorrentStateFiles = ["dht.dat", "resume.dat", "rss.dat", "settings.dat", "dht_feed.dat"]
+
+cleanUTorrentState torrentPath other = do
+  forM (P.map (torrentPath </> )
+    $ (P.map fromString (uTorrentStateFiles P.++ (P.map (P.++ ".old") uTorrentStateFiles))
+       P.++ other))
+    $ \file -> do
+      r <- try' $ shelly $  rm file
+--      debugM logger $ "clean result" P.++ (show r)
+      return ()
+  return ()
+
+webUIPortSeed = 9000
+webUIPortPeer = 8000
+trackerPort = 6666
+utorrentDefCreds = ("admin", "")
+
+milli = 10 ^ 6
+
+testRun = do
+  updateGlobalLogger logger (setLevel DEBUG)
+  peerSeedTalk "/home/dan/tools/bittorrent/testtorrent"
+                       "/home/dan/tools/bittorrent/testtorrent"
+                       "/home/dan/testdata/sample.txt"
+                       "/home/dan/testdata/sample100.torrent"
+
+-- script - 2 utorrent clients talk to get a file 
+peerSeedTalk :: Sh.FilePath -> Sh.FilePath -> Sh.FilePath -> Sh.FilePath -> IO ()
+peerSeedTalk seedPath peerPath dataFilePath tFilePath = runResourceT $ do
+  let oldData = [FS.filename dataFilePath]
+  liftIO $ do
+    debugM logger $ show oldData
+    cleanUTorrentState seedPath oldData
+    cleanUTorrentState peerPath oldData
+    shelly $ cp dataFilePath seedPath --place file to be seeded
  
+  tracker <- allocAsync $ async $ runTracker 6666
+  liftIO $ threadDelay $ 2 * milli
+
+  liftIO $ debugM logger "launching seeder..."
+  seeder <- allocAsync $ runUTClient seedPath
+  liftIO $ threadDelay $ 1 * milli
+  liftIO $ debugM logger "launched seeder"
+  seedConn <- liftIO $ makeUTorrentConn localhost webUIPortSeed  utorrentDefCreds
+  liftIO $ addTorrentFile seedConn $ pathToString tFilePath
+
+  liftIO $ P.getLine
+  -- sleep for a while until that is announced; ideally i should put
+  -- some hooks in the tracker;
+
+{-
+  liftIO $ threadDelay $ 5 * milli
+ 
+  peer <- allocAsync $ runUTClient peerPath
+  liftIO $ threadDelay $ 1 * milli
+  peerConn <- liftIO $ makeUTorrentConn localhost webUIPortPeer utorrentDefCreds
+
+  -- close procs
+  release $ fst peer 
+  -}
+  release $ fst seeder
+  release $ fst tracker
+
+  return ()
+
+-- this is so stupid I don't even..
+pathToString ::Sh.FilePath -> String
+pathToString fp = read . P.drop (P.length $ ("FilePath " :: String)) .  show $ fp 
+
+-- careful with utserver failure - utserver fails "silently"
+-- returning 0 even when it fails to read params
+runUTClient path = async $ shelly $ chdir path
+                                  $ Sh.run (path </> ("utserver" :: Sh.FilePath)) []
+
+
+-- treats an async as a resource that needs to be canceled on close
+allocAsync runAsync = allocate runAsync (liftIO . cancel) 
+
+-- proc
+testProc = do
+  ncop <-  async $ do
+    r <- shelly $ Sh.run (fromString "nc") $ P.map Txt.pack ["-l", "1234"]
+    P.putStrLn $ show r
+  P.getLine
+  cancel ncop
+  P.getLine
+
+-- play to showcase the client functionality
+runTorrentClientScript = do
+  updateGlobalLogger logger (setLevel DEBUG)
+  conn <- makeUTorrentConn "127.0.0.1" 9000  ("admin", "")
+  debugM logger "made first connection"
+
+{-
+  r3 <- setSettings conn [UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, UTP True, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1080, ProxyP2P True]
+  debugM logger $ show $  r3
+  torrentFile <-return "/home/dan/testdata/sample100.torrent"
+ -- addMagnetLink conn archMagnet
+  addTorrentFile conn torrentFile
+-}
+  r <- listTorrents conn
+  debugM logger $ "list of torrents  is  " ++  (show r)
+  return ()
+
+archMagnet = "magnet:?xt=urn:btih:67f4bcecdca3e046c4dc759c9e5bfb2c48d277b0&dn=archlinux-2014.03.01-dual.iso&tr=udp://tracker.archlinux.org:6969&tr=http://tracker.archlinux.org:6969/announce"

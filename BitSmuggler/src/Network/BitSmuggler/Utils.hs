@@ -12,6 +12,7 @@ import Data.Conduit as DC
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TChan
 import Control.Monad.IO.Class
+import Control.Exception
 
 instance Byteable Word128 where
   toBytes = BSL.toStrict . Bin.encode
@@ -35,3 +36,7 @@ sourceTChan chan = (liftIO $ atomically $ readTChan chan) >>= DC.yield
 -- passed into the constructor is a big-endian (newtwork byte order)
 -- call this on the value passed in to make it get what you actually mean
 portNumFixEndian = (\(Right v) -> v) . runGet getWord16be  . runPut . putWord16host
+
+
+try' :: IO a -> IO (Either SomeException a)
+try' = try
