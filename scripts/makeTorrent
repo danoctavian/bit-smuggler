@@ -1,4 +1,5 @@
 !/bin/sh
 
 # example tracker:  http://exampletracker.com/announce
+# $1 - tracker, $2 torrent file name (eg. johnny.torrent), $3 the data file 
 mktorrent -v -p -a $1 -o $2 $3

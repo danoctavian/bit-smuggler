@@ -1,0 +1,29 @@
+=================================
+uTorrent reverse engineering notes
+=================================
+
+Observations
+
+== Connection cut on big files ==
+* when seed -> peer transfer a ~1GB file the connection is cut every
+~250mb and remade. it seems as though it may not use the same tcp connection
+to transmit the whole file.
+ 
+not sure if there is a traceable cause for this. however, it is something that
+can occur so it should be dealt with.
+
+== utorrent is stateful ==
+
+state stored in dht.dat and so on blabla.dat influences whether connections are
+succesful or not (some peers may be classified as bad).
+
+attempt to reconnect without clearing state may affect future behaviour.
+
+
+
+
+
+
+
+
+

@@ -13,6 +13,7 @@ import Control.Concurrent.STM
 import Control.Concurrent.STM.TChan
 import Control.Monad.IO.Class
 import Control.Exception
+import Control.Monad
 
 instance Byteable Word128 where
   toBytes = BSL.toStrict . Bin.encode
@@ -30,7 +31,7 @@ if' c a b = if c then a else b
 -- conduit
 
 sourceTChan :: MonadIO m => TChan a -> Source m a
-sourceTChan chan = (liftIO $ atomically $ readTChan chan) >>= DC.yield
+sourceTChan chan = forever $ (liftIO $ atomically $ readTChan chan) >>= DC.yield
 
 -- PortNum from Network.Socket always assumes that whatever value
 -- passed into the constructor is a big-endian (newtwork byte order)

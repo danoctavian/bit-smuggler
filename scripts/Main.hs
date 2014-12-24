@@ -132,8 +132,8 @@ testRun = do
   updateGlobalLogger logger (setLevel DEBUG)
   peerSeedTalk "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_0/"
                        "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_1/"
-                       "/home/dan/testdata/sample.txt"
-                       "/home/dan/testdata/sample100.torrent"
+                       "/home/dan/testdata/bigsample.txt"
+                       "/home/dan/testdata/bigsample.torrent"
 
 -- script - 2 utorrent clients talk to get a file 
 peerSeedTalk :: Sh.FilePath -> Sh.FilePath -> Sh.FilePath -> Sh.FilePath -> IO ()
@@ -165,7 +165,7 @@ peerSeedTalk seedPath peerPath dataFilePath tFilePath = runResourceT $ do
   liftIO $ debugM logger "got announce"
   -- sleep for a while until that is announced; ideally i should put
 
-  proxy <- allocAsync $ async $ trafficProxy
+  proxy <- allocAsync $ async $ trafficCapture
   liftIO $ threadDelay $ 1 * milli
  
   peer <- allocAsync $ runUTClient peerPath
