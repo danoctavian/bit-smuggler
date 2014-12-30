@@ -33,7 +33,7 @@ import Data.Conduit as DC
 import Network.BitTorrent.Shepherd as Tracker
 import Network.BitTorrent.ClientControl
 import Network.BitTorrent.ClientControl.UTorrent
-import Network.BitSmuggler.BitTorrentSimulator as Sim
+import Network.BitSmuggler.BitTorrentSimulator as Sim hiding (logger)
 import Network.BitSmuggler.Utils
 import Data.Serialize as DS
 import Control.Concurrent
@@ -48,11 +48,13 @@ import Control.Monad.Trans.Resource
 project created to run experiments 
 -}
 
+{-
+
 main = do 
   P.putStrLn "running bit-smuggler script"
 
 testHash = Bin.decode $ BSL.replicate 20 0
-testDataFile = "/home/dan/repos/bitSmuggler/bit-smuggler/testdata/trafficSample00"
+testDataFile = "/home/dan/repos/bitSmuggler/bit-smuggler/testdata/sampleCapture0"
 
 localhost = "127.0.0.1"
 
@@ -73,6 +75,9 @@ initiatorPeer = do
 
 receiverPeer = do
   Sim.runClient receiverConf
+-}
+
+logger = "scripts"
 
 initCaptureHook incFile outFile a1 a2 = do
   incHook <- captureHook incFile

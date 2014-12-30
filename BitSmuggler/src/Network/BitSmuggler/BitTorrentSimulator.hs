@@ -75,26 +75,29 @@ instance BERT Torrent where
   readBERT (DictionaryTerm [(AtomTerm "infohash", ih), (AtomTerm "name", AtomTerm n)])
     = readBERT ih >>= (\ih -> return $ Torrent ih n)
 
+-- WARNING: disgusting hack
+-- put in a value that's never going to show up
+nothin = AtomTerm "2452qtxiv3940ylesh430uih59nlt"
 
 instance BERT () where
-  showBERT () = NilTerm
-  readBERT (NilTerm) =return ()
+  showBERT () = nothin 
+  readBERT t = if t == nothin then return () else (Left "fayul")
 
-hoistBERTErrIO (Right v) = return v
-hoistBERTErrIO (Left e) = case e of
+hoistBERTIO (Right v) = return v
+hoistBERTIO (Left e) = case e of
   ClientError s -> throwIO BT.ClientException
   ServerError term -> throwIO BT.ServerException
 
 clientConn :: String -> PortNum -> IO TorrentClientConn
 clientConn url port = do
   t <- tcpClient url (PortNum . portNumFixEndian $ port)
-  let rpc name params = call t rpcmod (show name) params >>= hoistBERTErrIO
+  let rpc name params = call t rpcmod (show name) params >>= hoistBERTIO
   return $ TorrentClientConn {
       addMagnetLink = rpc AddMagnetOp . (:[])
     , addTorrentFile = rpc AddFileOp . (:[])
     , listTorrents = rpc ListOp ([] :: [Int]) -- type qualifier means nothing
     , pauseTorrent = rpc PauseOp . (:[])
-    , removeTorrent  = rpc PauseOp . (:[])
+    , removeTorrent  = rpc StopTorrentOp . (:[])
     , setSettings = \ss -> return () -- no implementation
     , connectToPeer = Nothing
   }
@@ -105,19 +108,24 @@ data Config = Config {
     resourceMap :: Map.Map TorrentFileID ConnectionData
   , rpcPort :: Word16
   , peerPort :: Word16
+  , respSource :: String
 } deriving (Show)
 
 runClient conf = do
   tchan <- newTChanIO
-  ts <- newTVarIO (Map.fromList [(torrentID fooTorrent, (fooTorrent, tchan))])
+  ts <- newTVarIO Map.empty -- (Map.fromList [(torrentID fooTorrent, (fooTorrent, tchan))])
   let th = TorrentHandler ts 
                        (fromJust . (\k -> Map.lookup k (resourceMap conf)))
-  concurrently (runServer th (rpcPort conf)) (listenForPeers $ (peerPort conf))
+  concurrently (runServer th (rpcPort conf)) (listenForPeers (respSource conf) $ peerPort conf)
 
-listenForPeers port = do
+listenForPeers respSource port = do
   runTCPServer (serverSettings (fromIntegral port) "*") $ \appData -> do
     debugM logger "received connection. draining socket.."
-    (appSource appData) $$ awaitForever return
+    cmdChan <- newTChanIO 
+
+    concurrently  (dumpChunkFile respSource (appSink appData) cmdChan)
+                  ((appSource appData) $$ awaitForever return)
+    return ()
 
 -- command server (rpc interface to send commands to the client)
 runServer th port = do
@@ -131,7 +139,9 @@ dispatch th "bittorrent" op params = case (read op, params) of
     return $ Success $ showBERT ()
   (AddFileOp, [fname]) -> do
     let (Right n) = readBERT fname
+    debugM logger $ "adding file..." P.++ n
     newTorrent th (Left $ n)
+    debugM logger "succesfully added file..."
     return $ Success $ showBERT ()
   (ListOp, []) -> do
     fmap (Success . showBERT . P.map (fst . snd) . Map.toList)
@@ -146,6 +156,7 @@ messageTorrent th msg ihTerm = do
   torrentProc <- fmap (Map.lookup ih) $ atomically $ readTVar $ torrents th
   case torrentProc of
     Just (t, chan) -> do 
+      debugM logger "messaging torrent to stop"
       atomically $ writeTChan chan msg
       return . Success . showBERT $ ()
     Nothing -> return $ Undesignated "non-existant infohash"
@@ -157,9 +168,12 @@ newTorrent th source = do
   let t = connTorrent connData
   cmdChan <- newTChanIO 
   atomically $ modifyTVar (torrents th) (Map.insert (torrentID t) (t, cmdChan))
+  debugM logger "updated torrents list"
   forkIO $ do
     asyncTorrent <- async $ doTorrent cmdChan connData
     final <- waitCatch $ asyncTorrent
+    debugM logger $ "torrent finished. deleting " P.++ (show $ torrentID t)
+
     atomically $ modifyTVar (torrents th) (Map.delete (torrentID t))
 
 
@@ -170,10 +184,18 @@ doTorrent cmdChan connData = do
     $ \sink resSrc remoteConn -> do
       -- TODO: now sending the file contents in a loop; this doesn't really work
       -- bc initial handshake gets repeated; change this
-      withFile (dataFile connData) ReadMode $ \file -> forever $ do
-        sourceHandle file $= conduitGet (DS.get :: DS.Get NetworkChunk)
-          $= emitChunks cmdChan $$ sink
+      dumpChunkFile (dataFile connData) sink cmdChan
       return ()
+
+
+dumpChunkFile file sink cmdChan = do
+  withFile file ReadMode $ \file -> do
+    debugM logger $ "dumping traffic replay into socket from file "
+                  P.++ (show file)
+    sourceHandle file $= conduitGet (DS.get :: DS.Get NetworkChunk)
+      $= emitChunks cmdChan $$ sink
+    debugM logger $ "finished dumping"
+
 
 data NetworkChunk = NetworkChunk BS.ByteString
 
@@ -186,6 +208,7 @@ instance Serialize NetworkChunk where
 
 emitChunks cmdChan = go >> return () where
   go = runEitherT $ forever $ do
+    liftIO $ threadDelay $ 5 * 10 ^ 5
     maybeCmd <- liftIO $ atomically $ tryReadTChan cmdChan
     case maybeCmd of
       Just cmd -> takeCmd cmdChan cmd 
@@ -197,7 +220,7 @@ emitChunks cmdChan = go >> return () where
 
 
 takeCmd cmdChan cmd = case cmd of
-  Stop -> exit () -- finish up
+  Stop -> (liftIO $ debugM logger "exiting the torrent...") >> exit () -- finish up
   -- on pause it performs a blocking read on the cmd channel til other
   -- commands are received
   Pause -> (liftIO $ atomically $ readTChan cmdChan) >>= takeCmd cmdChan
@@ -222,3 +245,48 @@ data TorrentHandler = TorrentHandler {
 }
 
 
+testHash = Bin.decode $ BSL.replicate 20 0
+testDataFile = "/home/dan/repos/bitSmuggler/bit-smuggler/testdata/smallCapture0"
+
+testTFile = "/home/dan/repos/bitSmuggler/bit-smuggler/testdata/noxexistant.torrent"
+
+localhost = "127.0.0.1"
+
+
+testResourceMap = Map.fromList [(Left testTFile, testConnData)]
+
+initiatorConf = Network.BitSmuggler.BitTorrentSimulator.Config {resourceMap = testResourceMap, rpcPort = 2015, peerPort = 3001, respSource = testDataFile}
+
+testConnData = ConnectionData {connTorrent = Torrent  testHash "this is the filename"
+                              , dataFile = testDataFile
+                              , peerAddr = (localhost, peerPort receiverConf)
+                              , proxyAddr = (localhost, 1080)}
+
+
+receiverConf = Network.BitSmuggler.BitTorrentSimulator.Config {
+                      resourceMap = testResourceMap
+                      , rpcPort = 2016, peerPort = 3002, respSource = testDataFile}
+
+
+initiatorPeer = do
+  updateGlobalLogger logger  (setLevel DEBUG)
+  runClient initiatorConf
+
+receiverPeer = do
+  updateGlobalLogger logger  (setLevel DEBUG)
+  runClient receiverConf
+
+tellStop = do
+  c <- clientConn localhost (rpcPort initiatorConf)
+  removeTorrent c testHash
+
+tellInitiator = do
+  updateGlobalLogger logger  (setLevel DEBUG)
+  c <- clientConn localhost (rpcPort initiatorConf)
+  addTorrentFile c testTFile
+  lr <- listTorrents c
+  debugM logger (show lr)
+  P.getLine 
+  removeTorrent c testHash
+
+  
