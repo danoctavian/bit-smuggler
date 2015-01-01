@@ -29,6 +29,7 @@ import System.Log.Logger
 import Data.Conduit.Binary
 import Data.Conduit.List as CL
 import Data.Conduit as DC
+import Data.Conduit.Network
 
 import Network.BitTorrent.Shepherd as Tracker
 import Network.BitTorrent.ClientControl
@@ -192,6 +193,15 @@ peerSeedTalk seedPath peerPath dataFilePath tFilePath = runResourceT $ do
   release $ fst tracker
 
   return ()
+
+
+testTCPClient = runTCPClient (clientSettings testTCPSrcPort "79.117.145.153") $ \app -> do
+  P.putStrLn "connected"
+
+testTCPSrcPort = 6889
+
+testTCPServer = runTCPServer (serverSettings testTCPSrcPort "*") $ \app -> do
+  P.putStrLn $ show $ appSockAddr app
 
 -- this is so stupid I don't even..
 pathToString ::Sh.FilePath -> String

@@ -8,7 +8,7 @@ import Crypto.Elligator
 import Crypto.Curve25519
 import Crypto.Cipher.AES
 import Data.ByteString as BS
-import Crypto.Cipher.Types
+import Crypto.Cipher.Types hiding (Key)
 import Data.LargeWord
 import Data.Byteable
 import Data.Serialize
@@ -60,6 +60,8 @@ type Encrypt = Word128 -> Message -> ByteString
 type Decrypt = ByteString -> Maybe Message
 data CryptoOps = CryptoOps {encrypt :: Encrypt, decrypt :: Decrypt}
 
+type Key = Word256
+
 keySize = 32
 ivLen = 16
 authTagLen = 16
@@ -69,7 +71,7 @@ msgHeaderLen = ivLen + authTagLen
 
 -- derive client message to server (its pub key) and the encrypt/decrypt functions
 
-makeClientEncryption ::  CPRG g => Word256 -> g -> CryptoOps
+makeClientEncryption ::  CPRG g => Key -> g -> CryptoOps
 makeClientEncryption serverPkWord gen
   = makeCryptoOps privKey (pubFromWord256 serverPkWord)
     where
@@ -79,7 +81,7 @@ makeClientEncryption serverPkWord gen
       
 
 -- derive server encrypt/decrypt from client message and server private key
-makeServerEncryption :: Word256 -> ByteString -> Maybe CryptoOps
+makeServerEncryption :: Key -> ByteString -> Maybe CryptoOps
 makeServerEncryption skWord clientMessage
   = if (BS.length clientMessage >= fstMessageLen && (not $ isNothing decrypted)
         && (clientPkRepr == fromJust decrypted))

@@ -25,16 +25,75 @@ of encrypted data?)
 
 Methods:
 
-1. setup a file exchange in a swarm of size 2 leechers
+1. setup a file exchange in a swarm of size 2 leechers with a custom file
    (the server and the client)
 
 pros:
   * no outside interference
-  * maximal throughput
+    (new leechers/seeders can at most slow down things a bit)
+  * large throughput
   * simplest to implement
-  * 
 
-2.
+2. join existing real swarm in which the server is present
+cons:
+  * can't express preference for a certain peer with popular torrents such as utorrrent on 
+linux. unlikely to be added soon
+( http://forum.utorrent.com/topic/91746-adding-peers-manually/ ).
+therefore getting the client to connect to the right peer in a large swarm is purely 
+based on luck.  retries are a no-go (cutting formed connections to force an eventual
+
+even if functionality existed, all bittorrent clients attempt to make connections 
+to other peers in the swarm or receive connections to other peers in the swarm,
+therefore you will naturally end up with many connections if you are in a big swarm
+
+  connection to the "right" peer is a big giveaway if repeated a couple of times)
+  * based on above, only small swarms can be joined reducing this to solution no. 1
+  * how do you do steganography? prefetching the file by a client is slow
+
+
+3. have 2 machines on the receiving side - one is seeding. 1 is leeching.
+
+how is initial contact made? leeching is a pro-active action on the side of the receiver
+if you cannot put any data in the seeding 
+
+
+=== Bootstrap ===
+
+knowing only the IP of the bridge requires you do some sort reverse IP lookup
+to know what torrents to ask for or some way of asking the peer what torrents 
+he's seeding.
+
+idea 1
+use a bootstrap steganographied file. fetch a file which informs you about 
+which torrent to look for in data. the infohash of this file is provided in the 
+bridge descriptor. the file uses steganography to put encrypted data (with a shared
+secret put in the bridge descriptor - so it's not really a secret it's just meant
+to give you random looking data - once the tor descriptor is leaked - undetectability
+goes away. only privacy remains)
+
+However, the infohash of the file will be broken. since changing the contents of it
+involves making a hash collision to make the infohash match.
+
+!! give away. you always fetch a seeded file (the bigger it is the slower the boot) 
+ and then you fetch another file in a p2p fashion
+
+idea 2
+use a unique file for all incoming peers. this sucks. they all clobber on the same file
+and join the same swarm.
+
+What if there is the same bridge behind many machines? it's still the same shit, 
+you need 1 machine per 3 connections. that's very poor scaling.
+
+idea 3
+make a bootstrap file with a large set of seeded infohashes and peers connecting
+select 1 at random to minimize collisions.
+
+
+=== real infohash attack on solution 1 === 
+
+compile a database of all infohashes, and red flag connections that have 
+infohashes not part of that database. not a great attack, probably a lot of
+false positives, since new hashes are created all the time
 
 
 === Information leaks ===
