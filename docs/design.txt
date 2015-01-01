@@ -1,0 +1,59 @@
+
+attack opportunities analyzed as a funnel
+
+Intuitively, each particular behaviour of a BitSmuggler connection
+narrows down the investigation space for a network censor.
+
+Such signs could be.
+eg:
+ * it only uses uTorrent 
+ * if all files are exchanged within swarm of size 2, with a single connection
+to the other peer in the swarm it means that an adversary maybe can count
+connections for the same infohash (pattermatch for the bittorrent header)
+and narrow down to all bitTorrent connections that use a single other
+peer to get thier file data
+
+Some signs are are easier to check or are a strong give away (the presence of
+a particular constant string in the data being exchanged is almost certain
+immediate give away.)
+
+Some cannot be checked at wire speed but may be checked on a slow path.
+(eg. is the file really a video file as it claims to be? or is it just a blob
+of encrypted data?)
+
+=== File exchanges ===
+
+Methods:
+
+1. setup a file exchange in a swarm of size 2 leechers
+   (the server and the client)
+
+pros:
+  * no outside interference
+  * maximal throughput
+  * simplest to implement
+  * 
+
+2.
+
+
+=== Information leaks ===
+
+reverse proxying DHT leak - UNCONFIRMED
+
+when reverse proxied the peer connection comes from localhost.
+
+does this info end up leaking outside? because if it does it's a sure
+sign that bitSmuggler is being used.
+
+This is most likely not a problem. suppose the DHT logic may attempt to make
+ note of a new swarm member based on an incoming connection. the IP is
+ solveable but it does not know, which is the port the peer coming in is 
+listening on.
+
+This is verifiable, but most likely a peer record ends up in the DHT only if 
+someone advertises it, and usually the peer always advertises itself - aka i 
+don't think the receiver will say "here's another peer that i know of" to 
+the DHT.
+
+
