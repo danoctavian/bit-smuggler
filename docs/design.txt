@@ -21,6 +21,37 @@ Some cannot be checked at wire speed but may be checked on a slow path.
 (eg. is the file really a video file as it claims to be? or is it just a blob
 of encrypted data?)
 
+
+=== slow path analysis vs wire analysis ===
+
+An adversary may do 2 kinds of analysis
+
+* real-time (wire analysis)
+  - with then intention of catching connections as they happen;
+* slow path (take connections) 
+    - simple strategy - capture and store bittorrent traffic for a day;
+      take your time to analyze the capture and detect all suspicious
+      connections. this yields bridge addresses, and addresses of people connected
+      to them, but from the past
+    - filter a small part of connections in real-time and analyze them on a slowpath
+      while they may still be running
+
+WARNING:
+current design is defeatable by slow path analysis if the censor gets hold of
+the torrent file. to send arbitrary data through the bittorrent connection
+one needs to break the hashes of the pieces. 
+
+In nature hash checks don't fail that often in a single connection. So it's a 
+strong sign that it is a rogue connection.
+
+This part of the protocol allows you to fetch the torrent file from peers.
+http://www.bittorrent.org/beps/bep_0009.html
+
+according to this paper, dht is reasonable to crawl (8000 nodes in 2 hrs rate
+- your rate shuold scale with number of machines)
+https://www.usenix.org/legacy/event/woot10/tech/full_papers/Wolchok.pdf
+Thus you can obtain torrent files.
+
 === File exchanges ===
 
 Methods:
@@ -50,11 +81,13 @@ therefore you will naturally end up with many connections if you are in a big sw
   * based on above, only small swarms can be joined reducing this to solution no. 1
   * how do you do steganography? prefetching the file by a client is slow
 
-
 3. have 2 machines on the receiving side - one is seeding. 1 is leeching.
 
 how is initial contact made? leeching is a pro-active action on the side of the receiver
-if you cannot put any data in the seeding 
+This option is quite problematic and does not provide a clear advantage.
+
+cons:
+  recriprocal seeding is a give-away. unlikely to happen often in nature
 
 
 === Bootstrap ===
@@ -88,13 +121,8 @@ idea 3
 make a bootstrap file with a large set of seeded infohashes and peers connecting
 select 1 at random to minimize collisions.
 
-
-=== real infohash attack on solution 1 === 
-
-compile a database of all infohashes, and red flag connections that have 
-infohashes not part of that database. not a great attack, probably a lot of
-false positives, since new hashes are created all the time
-
+eg. put 100 seeded files. the server will be seeding all of them.
+a connecting client picks 1 at random and joins the swarm.
 
 === Information leaks ===
 
@@ -115,4 +143,5 @@ someone advertises it, and usually the peer always advertises itself - aka i
 don't think the receiver will say "here's another peer that i know of" to 
 the DHT.
 
+=== Current design ===
 
