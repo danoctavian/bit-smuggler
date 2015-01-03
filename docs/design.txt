@@ -65,6 +65,9 @@ pros:
   * large throughput
   * simplest to implement
 
+cons: 
+  * it's a small swarm all the time (size 2, peer, peer) - sign
+
 2. join existing real swarm in which the server is present
 cons:
   * can't express preference for a certain peer with popular torrents such as utorrrent on 
@@ -124,6 +127,30 @@ select 1 at random to minimize collisions.
 eg. put 100 seeded files. the server will be seeding all of them.
 a connecting client picks 1 at random and joins the swarm.
 
+Steganography:
+  * primitive - encrypted blobs - placed instead of file data
+  * shaped as a viewable video file
+     research stego optiions for video
+  * encrypted blobs placed inside video containers and displacing codecs
+
+* Video steganography *
+http://en.wikipedia.org/wiki/Steganography_tools
+OpenPuff  - windows only
+Steganosaurus
+-- none of them look great atm...
+
+Video steganography is a hard problem and uncessary to solve now. given that
+the file is broken anyway there's no point in making a viewable video when
+streaming. therefore maybe wrapping something in a video format is enough
+
+
+=== File used ===
+
+1. fake file.
+  randomly generated
+2.
+real file.
+
 === Information leaks ===
 
 reverse proxying DHT leak - UNCONFIRMED
@@ -144,4 +171,8 @@ don't think the receiver will say "here's another peer that i know of" to
 the DHT.
 
 === Current design ===
+
+File exchange: solution 1 - swarm size 2
+ 
+  
 
