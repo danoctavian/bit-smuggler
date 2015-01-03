@@ -148,8 +148,10 @@ streaming. therefore maybe wrapping something in a video format is enough
 
 1. fake file.
   randomly generated
-2.
-real file.
+2. real file. pre-fetched
+3. real file. fetched while in a swarm (joining arbitrary swarms)
+
+
 
 === Information leaks ===
 
@@ -172,7 +174,57 @@ the DHT.
 
 === Current design ===
 
-File exchange: solution 1 - swarm size 2
- 
+2nd prototype: use small size swarm with randomly generated file
+
+== implement ack mechanism to prevent packet loss ==
+Packet loss causes:
+
+tcp stream tampering - by an adversary with tcp reconstruction ability
+  he could:
+   * swap packets between them (no guaranteed order)
+   * remove packet (packet loss)
+   * smear packet content (same as packet loss)
+   * replay packet
   
+swarm change - when things get disconnected partial messages were sent
+  through the wire and are invalid - same as packet loss
+arbitrary disconnects by utorrent - same as above but uncontrolled
+
+!! WARNING: when protecting the torrent client from hash fails by correcting the
+  piece on entry make sure you do it only for the pieces that you actually tampered
+ with. not a piece that an adversay might have tampered with.
+ 
+
+ if he has application level stream parsing, he could screw with you by moving
+ your payload between pieces. you can verify that the container for your 
+ encrypted data has been tampered with by using the AAD (additional auth data)
+ field of AES
+
+
+!! All components altering the stream should not change the BT client
+   behaviour
+bittorrent stream parser - should not crash when it cannot parse the stream
+  (an injection an attack or anything really could make it fail but it shouldn't
+  stop the connection - just stop and wait for a natural disconnect of the 
+  BT client to attempt a recovery - unless you can code a recovery for the parser)
+
+== double proxy on each side ==
+
+the double proxies ensure that when the 2 peers reconnect it works both ways.
+
+thus the client can connect to the server or viceversa and it will still work.
+
+== simple steganography == 
+
+just throw in encrypted blobs. good enough for now, given that a complete torrent
+reconstruction will yield anyway that there are a lot of hash failures.
+
+This simplifies greatly the logic of fitting data in bittorrent pieces and resending.
+
+== send pipeline ==
+
+== inteface ==
+
+follow Settings -> ConnHandler -> IO () 
+signature to ensure that all resources are properly handled
 
