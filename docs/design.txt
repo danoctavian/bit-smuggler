@@ -181,6 +181,7 @@ Packet loss causes:
 
 tcp stream tampering - by an adversary with tcp reconstruction ability
   he could:
+   * simply cut TCP connection
    * swap packets between them (no guaranteed order)
    * remove packet (packet loss)
    * smear packet content (same as packet loss)
@@ -219,12 +220,63 @@ thus the client can connect to the server or viceversa and it will still work.
 just throw in encrypted blobs. good enough for now, given that a complete torrent
 reconstruction will yield anyway that there are a lot of hash failures.
 
-This simplifies greatly the logic of fitting data in bittorrent pieces and resending.
-
 == send pipeline ==
+
+push arbitrary binary data sendChan -> stream - apply len prefix -> take M sized chunks -> 
+  ackBuf -> encrypt -> ouChannel 
+
+piece handling pseudo in the proxy loop
+
+\btMsg -> do
+  if not piece then
+    btMsg
+  else
+    m <- outChannel
+    case m of
+      Nothing -> btMsg
+      Just v -> insert v btMsg
+
+== recv pipeline ==
+
+inChannel -> decrypt -> ack -> stream -> parse len prefixed messages -> recvChan
+
+\btMsg -> do
+  if not piece then
+    btMsg
+  else
+    m <- outChannel
+    case m of
+      Nothing -> btMsg
+      Just v -> insert v btMsg
+
+== Handshake ==
+
+client can set up encryption straight off using curve 25519. and lay out the data pipes
+sends first message
+wait for handshake response from server
+
+
+
+server needs to catch the first message from the client to setup encryption.
+
+== time measurement ==
+
+for the protocols overlayed over the bittorrent stream a measure of "time"
+is how many bittorrent blocks pass between the clients.
+
+
+
+-------------------------------------------------
+-- non-official standard for block size
+-- warning: this assumption is strong but for now it simplifies my design
+PieceMessagePayload = 16384
+M = PieceMessagePayload - EncryptionOverhead - SequenceNumber
 
 == inteface ==
 
 follow Settings -> ConnHandler -> IO () 
 signature to ensure that all resources are properly handled
 
+== implementation notes ==
+use tqueue wherever you were using a tchan; it's faster and the right choice
+wherever you don't need the dupChan functionality (a broadcast chan)

@@ -28,6 +28,8 @@ import Data.Conduit as DC
 import Data.Conduit.List as DCL
 import Data.ByteString.Char8 as DBC
 
+import Network.BitSmuggler.Utils
+
 type BitField    = DBL.ByteString
 type PieceLength = Int
 
@@ -52,7 +54,7 @@ data Message = KeepAlive
              | Have PieceNum -- Int
              | BitField BitField
              | Request PieceNum Block
-             | Piece PieceNum Int DB.ByteString
+             | Piece {index :: PieceNum, begin :: Int, block :: DB.ByteString}
              | Cancel PieceNum Block
              | Port Integer
              | Handshake  ([Capabilities], ByteString, ByteString) ByteString -- hacky; TODO: refactor later
@@ -153,8 +155,6 @@ headerParser = do
             DB.concat $ [DB.pack [protoLen], bsProtoHead, encode caps, ihR, pid]
 
 
-
-
 -- TODO: there's more
 data Capabilities = Fast | DHT | ExtensionProtocol | ExtensionNegotiationProtocol
     deriving (Show, Eq)
@@ -179,12 +179,13 @@ packageParser = do
                         (Right m) -> Right m
 
 runTestParse = do
-    bs <- DB.readFile "delugeToUTorrentSample/outgoingTraffic"
+    bs <- DB.readFile "../testdata/incomingBTTraffic"
     P.putStrLn $ show $ DB.take 100 bs
     P.putStrLn $ show $ DB.take (72 + 218 + 4 + 1 + 4 + 3 + 4 + 3 + 4 + 1) bs
-    P.putStrLn $ show $ (\(DAC.Done _ [Right (Handshake _ bs)]) -> DA.parse headerParser bs) $
-                        -- (P.length $ P.filter isP r,  P.length r) ) $ 
-                        DA.parse parseWith2 bs
+    P.putStrLn $ show $ (\(DAC.Done _ r) ->  (P.map (DB.length . block . fromRight) $ P.filter isP r,  P.length r) ) $ 
+                        DA.parse parseInOrder bs
+
+--(\(DAC.Done _ [Right (Handshake _ bs)]) -> DA.parse headerParser bs) $
 
 
 
@@ -195,7 +196,7 @@ serializePackage pack = case pack of
 
 prefixLen bs =  DB.concat [encode $ (\l -> fromIntegral l :: Word32) $ DB.length bs, bs]
 
-parseInOrder = headerParser >> (DACo.count 102 packageParser)
+parseInOrder = headerParser >> (DACo.count 400 packageParser)
 parseWith2 = DACo.count 1 (headerParser <|> packageParser)
 
 isP (Right (Piece _ _ _)) = True

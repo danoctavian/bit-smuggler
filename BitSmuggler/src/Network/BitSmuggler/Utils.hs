@@ -26,6 +26,8 @@ getRemaining = remaining >>= getBytes
 eitherToMaybe (Left _) = Nothing
 eitherToMaybe (Right v) = Just v
 
+fromRight (Right v) = v
+
 if' c a b = if c then a else b
 
 -- conduit

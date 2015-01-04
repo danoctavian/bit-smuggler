@@ -93,7 +93,7 @@ captureHook file = do
   debugM logger $ "setting up capture for " P.++ file
   forkIO $ do
     withFile (file P.++ (show r)) WriteMode $ \fileH -> do
-      sourceTChan tchan =$ (CL.map (DS.encode . NetworkChunk))  $$ sinkHandle fileH
+      sourceTChan tchan {- =$ (CL.map (DS.encode . NetworkChunk)) -}  $$ sinkHandle fileH
   debugM logger $ "done setting up capture"
  
   return $ \bs -> atomically $ writeTChan tchan bs >> return bs
@@ -138,8 +138,8 @@ testRun = do
   updateGlobalLogger logger (setLevel DEBUG)
   peerSeedTalk "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_0/"
                        "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_1/"
-                       "/home/dan/testdata/bigsample.txt"
-                       "/home/dan/testdata/bigsample.torrent"
+                       "/home/dan/testdata/sample.txt"
+                       "/home/dan/testdata/sample100.torrent"
 
 -- script - 2 utorrent clients talk to get a file 
 peerSeedTalk :: Sh.FilePath -> Sh.FilePath -> Sh.FilePath -> Sh.FilePath -> IO ()

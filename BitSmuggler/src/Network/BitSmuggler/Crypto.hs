@@ -35,9 +35,10 @@ knows Pkserver
 
                                                      Pk-client = elligator(RandStringRepr)
 
-                              ===Diffie Hellman===
+                              ===Shared secret derivation===
 
-SharedSecret = DH(Sk-client, Pk-server)              SharedSecret = DH(Sk-server, Pk-client)
+SharedSecret = Curve25519(Sk-client, Pk-server) 
+                                            SharedSecret = Curve25519(Sk-server, Pk-client)
 
                               === Start message exchange ===
 
