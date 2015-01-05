@@ -244,10 +244,7 @@ inChannel -> decrypt -> ack -> stream -> parse len prefixed messages -> recvChan
   if not piece then
     btMsg
   else
-    m <- outChannel
-    case m of
-      Nothing -> btMsg
-      Just v -> insert v btMsg
+    push btMsg inChannel
 
 == Handshake ==
 

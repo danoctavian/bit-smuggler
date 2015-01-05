@@ -19,6 +19,7 @@ library
   exposed-modules:     
     Network.BitSmuggler.BitTorrentSimulator
     Network.BitSmuggler.Utils
+    Network.BitSmuggler.Server
   other-modules:       
     Network.BitSmuggler.Crypto
     Network.BitSmuggler.BitTorrentParser
