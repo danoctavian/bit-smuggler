@@ -10,9 +10,16 @@ import Data.Conduit.Binary as DCB
 import Data.Conduit
 import Control.Monad.Trans.Resource
 import qualified Data.ByteString.Lazy as BSL
+import Data.ByteString
+
+import Network.BitSmuggler.Protocol
 {-
 
+SERVER.
 
+run single torrent client - running many potentially blows the cover
+ a normal peer in the bittorrent network runs a single instance of
+ some torrent client
 
 -}
 
@@ -28,6 +35,8 @@ bt client cmd server port
 
 
 -}
+
+
 data ServerConfig = ServerConfig {
     serverSecretKey :: Key
   , pubBitTorrentPort :: PortNum
@@ -38,16 +47,28 @@ data ServerInternals = ServerInternals {
     socksProxyPort :: PortNum
   , revProxyPort :: PortNum
 }
-listen :: ServerConfig -> IO ()
-listen config = do
+
+
+listen :: ServerConfig -> (ConnData -> IO ()) -> IO ()
+listen config handle = do
   debugM logger "started bit-smuggler server..."
 
 
-rs :: [Word8]
-rs = randoms (mkStdGen 2389353244732841002)
+  -- start torrent client (with config)
+
+  -- connect to it
+  -- configure it
+
+  -- setup the files on which the client is working
 
 
-dumpRands = do
-  putStrLn "dumping"
-  runResourceT $ sourceLbs (BSL.pack rs) =$ DCB.isolate (10 ^ 6) $$ sinkFile "theRandFile"
+  -- setup proxies (socks and reverse)
+
+  -- wait for it...
+
+
+genRandFile :: Int -> Int -> FilePath -> IO ()
+genRandFile seed size file = runResourceT
+              $ sourceLbs (BSL.pack  $ randoms (mkStdGen seed))
+              =$ DCB.isolate size $$ sinkFile file
 
