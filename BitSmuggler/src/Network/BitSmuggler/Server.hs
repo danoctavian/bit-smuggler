@@ -40,7 +40,6 @@ bt client cmd server port
 data ServerConfig = ServerConfig {
     serverSecretKey :: Key
   , pubBitTorrentPort :: PortNum
-    
 }
 
 data ServerInternals = ServerInternals {
@@ -61,8 +60,9 @@ listen config handle = do
 
   -- setup the files on which the client is working
 
-
   -- setup proxies (socks and reverse)
+
+  -- tell client to use the files
 
   -- wait for it...
 

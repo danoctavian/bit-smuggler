@@ -1,6 +1,8 @@
 module Network.BitSmuggler.Client where
 
 import Network.BitSmuggler.Protocol
+import Network.BitSmuggler.Crypto (Key)
+
 import System.Log.Logger
 {-
 
@@ -12,9 +14,21 @@ logger = "BitSmuggler.Client"
 
 data ClientConfig = ClientConfig {
     btClientConfig :: BTClientConfig
+  , serverDescriptor :: ServerDescriptor
 }
-
 
 clientConnect :: ClientConfig -> (ConnData -> IO ()) -> IO ()
 clientConnect config handle = do
   debugM logger "starting client "
+
+  -- start torrent client (with config)
+
+  -- connect to it
+  -- configure it
+
+  -- setup the FILE on which the client is working
+
+  -- setup proxies (socks and reverse)
+  
+  -- tell client to start working on file 
+  

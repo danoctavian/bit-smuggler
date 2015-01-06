@@ -34,6 +34,7 @@ data ContactFile = FakeFile {
                      -- a single file torrent; missing piece data
                    , torrentFile :: Torrent 
                    , fileInfoHash :: InfoHash 
+                   , useDHT :: Bool
                  }
                  | RealFile InfoHash
 
