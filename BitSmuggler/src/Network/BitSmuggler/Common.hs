@@ -116,7 +116,7 @@ createContactFile contactFile cache dir =
   case contactFile of
     f@(FakeFile {..})  -> do
       debugM logger "processing a fake file"
-      let sf@(SingleFile {..}) = tInfo $ torrentFile -- assuming it's a single file
+      let sf@(SingleFile {..}) = tInfo torrentFile -- assuming it's a single file
       let fname = (BSLC.unpack tName)
       let dataFile = dir </> fname
       createWithCache cache infoHash dataFile (genRandBytes seed (fromIntegral tLength))
@@ -125,7 +125,7 @@ createContactFile contactFile cache dir =
       when (not useDHT) $ do -- dump the torrent file
         tFileContent <- if (lacksPieces $ tInfo torrentFile) then do
           pieces <- hashPieces [dataFile] (fromIntegral tLength)
-          return torrentFile
+          return $ torrentFile {tInfo = sf {tPieces = BSL.fromChunks pieces}}
           else return torrentFile
         BSL.writeFile torrentFilePath (bPack $ serializeTorrent torrentFile) 
 

@@ -13,6 +13,9 @@ import Data.Conduit
 import Data.Conduit.Binary
 import System.IO
 import Control.Monad.IO.Class
+import Control.Monad
+import System.FilePath
+import System.Directory
 
 {-
 cache of files stored in a directory
@@ -28,7 +31,11 @@ mapFile = "mapFile.cache"
 
 load :: (Ord a, Serialize a) => FilePath -> IO (FileCache a)
 load root = do
-  (Right files) <- fmap decode $ BS.readFile mapFile
+  let mapFilePath = root </> mapFile
+  exists <- doesFileExist mapFilePath
+  files <- if exists
+           then fmap ((\(Right m) -> m) . decode) $ BS.readFile mapFilePath
+           else return (Map.empty)
   tvar <- newTVarIO files
   return $ FileCache {
       lookup = \k -> (atomically $ readTVar tvar) >>= (return . Map.lookup k)
@@ -38,7 +45,7 @@ load root = do
         hClose handle
         atomically $ modifyTVar tvar (Map.insert k path)
         return path
-    , close = (atomically $ readTVar tvar) >>= BS.writeFile mapFile . encode
+    , close = (atomically $ readTVar tvar) >>= BS.writeFile mapFilePath . encode
   } 
 
 
