@@ -1,6 +1,10 @@
  {-# LANGUAGE OverloadedStrings #-}
 
-module Network.BitSmuggler.TorrentClientProc where
+module Network.BitSmuggler.TorrentClientProc (
+    uTorrentProc
+  , PreBootSetting (..) 
+  , TorrentProc (..)
+) where
 
 import Prelude as P
 import Data.Word
@@ -18,6 +22,7 @@ data TorrentProc = TorrentProc {
     cleanState :: IO ()
   , start :: IO ()
   , setSettings :: [PreBootSetting] -> IO ()
+  , addFile :: P.FilePath -> IO () -- stores a data file for the torrent to use
 }
 
 
@@ -29,6 +34,7 @@ uTorrentProc path = TorrentProc {
   , setSettings = \ss -> writeFile
                          (pathToString $ path </> ("utserver.conf" :: Sh.FilePath))
                          (P.concat $ intersperse "\n" $ P.map utConf ss)
+  , addFile = \file -> shelly $ cp (fromString file) path
 }
 
 utConfVar name val = name ++ ": " ++ val

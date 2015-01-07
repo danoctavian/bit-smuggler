@@ -250,8 +250,6 @@ testDataFile = "/home/dan/repos/bitSmuggler/bit-smuggler/testdata/smallCapture0"
 
 testTFile = "/home/dan/repos/bitSmuggler/bit-smuggler/testdata/noxexistant.torrent"
 
-localhost = "127.0.0.1"
-
 
 testResourceMap = Map.fromList [(Left testTFile, testConnData)]
 

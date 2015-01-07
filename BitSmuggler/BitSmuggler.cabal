@@ -25,8 +25,9 @@ library
     Network.BitSmuggler.Crypto
     Network.BitSmuggler.BitTorrentParser
     Network.BitSmuggler.TorrentFile
-    Network.BitSmuggler.Protocol
+    Network.BitSmuggler.Common
     Network.BitSmuggler.TorrentClientProc
+    Network.BitSmuggler.FileCache
 
   -- other-extensions:    
   build-depends:       base >=4.7 && <4.8
@@ -63,6 +64,12 @@ library
                      , torrent >=10000.0 && <10000.1
                      , cryptohash >=0.11.6 && <0.12
                      , shelly >=1.5.6 && <1.6
+                     , retry >=0.5.1 && <0.6
+                     , exceptions >=0.6.1 && <0.7
+                     , temporary-resourcet >=0.1.0 && <0.2
+                     , temporary >=1.2 && <1.3
+                     , filepath >=1.3 && <1.4
+                     , unix >=2.7 && <2.8
 --                     , derive >=2.5.18 && <2.6
   hs-source-dirs:      src
   default-language:    Haskell2010

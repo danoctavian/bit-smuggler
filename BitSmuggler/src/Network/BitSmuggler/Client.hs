@@ -1,6 +1,6 @@
 module Network.BitSmuggler.Client where
 
-import Network.BitSmuggler.Protocol
+import Network.BitSmuggler.Common
 import Network.BitSmuggler.Crypto (Key)
 
 import System.Log.Logger

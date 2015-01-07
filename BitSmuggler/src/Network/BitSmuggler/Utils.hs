@@ -1,7 +1,22 @@
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE TypeSynonymInstances, ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module Network.BitSmuggler.Utils where
+module Network.BitSmuggler.Utils (
+    localhost
+  , milli 
+  , getRemaining
+  , eitherToMaybe
+  , fromRight
+  , try'
+  , if'
+  , sourceTChan
+  , alwaysRetry
+  , allocAsync
+  , AsyncRes
+  , portNumFixEndian
+  , PortNum
+  , InfoHash
+) where
 
 import Data.Byteable
 import Data.Binary as Bin
@@ -14,6 +29,19 @@ import Control.Concurrent.STM.TChan
 import Control.Monad.IO.Class
 import Control.Exception
 import Control.Monad
+import Control.Monad.Trans.Resource
+import Control.Concurrent.Async
+import Control.Retry
+import qualified Control.Monad.Catch as Catch
+import Network.BitTorrent.ClientControl (PortNum, InfoHash)
+
+-- constants
+
+localhost = "127.0.0.1"
+
+milli :: Int
+milli = 10 ^ 6
+
 
 instance Byteable Word128 where
   toBytes = BSL.toStrict . Bin.encode
@@ -43,3 +71,11 @@ portNumFixEndian = (\(Right v) -> v) . runGet getWord16be  . runPut . putWord16h
 
 try' :: IO a -> IO (Either SomeException a)
 try' = try
+
+alwaysRetry n = Catch.Handler $ \ (e :: SomeException) -> return True
+
+-- ASYNC RESOURCES
+
+ -- async resource
+type AsyncRes a = (ReleaseKey, Async a)
+allocAsync runAsync = allocate runAsync (liftIO . cancel)

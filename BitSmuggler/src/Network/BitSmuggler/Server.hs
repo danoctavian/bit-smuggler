@@ -3,16 +3,13 @@ module Network.BitSmuggler.Server where
 import Prelude as P
 import Network.BitSmuggler.Crypto (Key)
 import System.Log.Logger
-import Network.BitTorrent.ClientControl
-import System.Random
 import Data.Word
-import Data.Conduit.Binary as DCB
-import Data.Conduit
 import Control.Monad.Trans.Resource
 import qualified Data.ByteString.Lazy as BSL
 import Data.ByteString
+import Control.Monad.IO.Class
 
-import Network.BitSmuggler.Protocol
+import Network.BitSmuggler.Common
 {-
 
 SERVER.
@@ -39,36 +36,29 @@ bt client cmd server port
 
 data ServerConfig = ServerConfig {
     serverSecretKey :: Key
-  , pubBitTorrentPort :: PortNum
-}
-
-data ServerInternals = ServerInternals {
-    socksProxyPort :: PortNum
-  , revProxyPort :: PortNum
+  , btClientConfig :: BTClientConfig
+  -- the files on which the server is "listening"
+  , contactFiles :: ContactFile
 }
 
 
 listen :: ServerConfig -> (ConnData -> IO ()) -> IO ()
-listen config handle = do
-  debugM logger "started bit-smuggler server..."
+listen config handle = runResourceT $ do
+  liftIO $ debugM logger "started bit-smuggler server..."
 
 
   -- start torrent client (with config)
+  (btProc, btClientConn) <- setupBTClient $ btClientConfig config
 
-  -- connect to it
-  -- configure it
-
-  -- setup the files on which the client is working
+  -- setup the files on which the client is working in a temp dir
 
   -- setup proxies (socks and reverse)
 
   -- tell client to use the files
 
   -- wait for it...
+  -- in case of torrent app crash - restart it 
+  return ()
 
 
-genRandFile :: Int -> Int -> FilePath -> IO ()
-genRandFile seed size file = runResourceT
-              $ sourceLbs (BSL.pack  $ randoms (mkStdGen seed))
-              =$ DCB.isolate size $$ sinkFile file
 
