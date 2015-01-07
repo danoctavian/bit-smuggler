@@ -22,7 +22,10 @@ import Data.Byteable
 import Data.Binary as Bin
 import qualified Data.ByteString.Lazy as BSL
 import Data.LargeWord
-import Data.Serialize
+import Data.Serialize as DS
+import Data.Serialize.Put as DS
+import Data.Serialize.Get as DS
+
 import Data.Conduit as DC
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TChan
@@ -48,6 +51,16 @@ instance Byteable Word128 where
 
 instance Byteable Word256 where
   toBytes = BSL.toStrict . Bin.encode
+
+-- just because i made the infohash a word160...
+-- i got this ugly thing
+instance Serialize InfoHash where
+  get = do
+    bs <- getBytes 20
+    case Bin.decodeOrFail $ BSL.fromChunks [bs] of
+      Right (_, _, v) -> return v
+      Left _ -> fail "shit son"
+  put = DS.putLazyByteString . Bin.encode 
 
 getRemaining = remaining >>= getBytes
 

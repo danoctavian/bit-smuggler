@@ -1,10 +1,12 @@
 {-# LANGUAGE RecordWildCards, DeriveDataTypeable, OverloadedStrings #-}
+{-# LANGUAGE PackageImports #-}
 module Network.BitSmuggler.Common (
     ConnData (..)
   , BitSmugglerException (..)
   , BTClientConfig (..)
   , ContactFile (..)
   , ServerDescriptor (..)
+  , setupContactFiles
   , createContactFile
   , setupBTClient
   , genRandBytes
@@ -32,6 +34,7 @@ import Data.Conduit.Binary as DCB
 import Data.Conduit
 import System.Posix.Files
 import Data.BEncode
+import "temporary-resourcet" System.IO.Temp
 
 import Network.BitSmuggler.Crypto (Key)
 import Network.BitSmuggler.Utils
@@ -111,6 +114,16 @@ setupBTClient config = do
   liftIO $ CC.setSettings conn [UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, UTP True, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP localhost, ProxyPort (socksProxyPort config), ProxyP2P True]
 
   return (btClient, conn)
+
+
+setupContactFiles contactFiles fileCachePath = do
+  (_, cache) <- allocate (FC.load fileCachePath :: IO (FileCache InfoHash))
+                 FC.close
+
+  -- this dir will be deleted *recursively* when resource is cleared
+  (_, contactsDir) <- createTempDirectory Nothing "contactFiles"
+
+  forM contactFiles $ \f -> liftIO $ createContactFile f cache contactsDir
 
 
 createContactFile contactFile cache dir = 
