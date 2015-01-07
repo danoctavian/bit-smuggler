@@ -47,5 +47,3 @@ load root = do
         return path
     , close = (atomically $ readTVar tvar) >>= BS.writeFile mapFilePath . encode
   } 
-
-

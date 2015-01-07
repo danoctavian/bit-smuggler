@@ -7,6 +7,7 @@ module Network.BitSmuggler.Common (
   , ServerDescriptor (..)
   , createContactFile
   , setupBTClient
+  , genRandBytes
 ) where
 
 import Data.IP

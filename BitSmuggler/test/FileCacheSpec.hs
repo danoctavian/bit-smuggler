@@ -21,14 +21,7 @@ import Network.BitSmuggler.FileCache as FC
 main :: IO ()
 main = hspec spec
 
-
-type DataMap k = Map.Map k (FilePath, ByteString)
-
-     
-
-
 tempDir = "testDir"
-
 
 store cache items = forM items (\(k, c) -> FC.put cache k (DCL.sourceList [c]))
 
@@ -68,7 +61,6 @@ spec = do
        checkContains reloaded (P.zip items destinations)
      return ()
     
-        
   return ()
 
 
