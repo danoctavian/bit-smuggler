@@ -42,6 +42,8 @@ import Network.BitTorrent.ClientControl as CC hiding (Torrent)
 import Network.BitSmuggler.TorrentClientProc as TC
 import Network.BitSmuggler.FileCache as FC
 import Network.BitSmuggler.TorrentFile
+
+import Network.TCP.Proxy.Server hiding (UnsupportedFeature)
 {- 
 
 bitsmuggler functionality common between client and server
@@ -160,3 +162,6 @@ genRandBytes seed size
   = sourceLbs (BSL.pack  $ randoms (mkStdGen seed)) =$ DCB.isolate size
 
 lacksPieces = (== "") . tPieces
+
+-- proxying
+
