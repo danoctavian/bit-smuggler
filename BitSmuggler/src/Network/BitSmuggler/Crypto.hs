@@ -52,6 +52,9 @@ AAD (additional authenticated data) - is not used at the moment - can be used to
 
 -} 
 
+data HandshakeMessage
+  = HandshakeMessage {clientPkRepr :: ByteString, hsPayload :: ByteString}
+
 data EncryptedMessage = EncryptedMessage ByteString AuthTag ByteString
 
 type Message = ByteString
@@ -71,7 +74,8 @@ msgHeaderLen = ivLen + authTagLen
 
 
 -- derive client message to server (its pub key) and the encrypt/decrypt functions
-
+-- the runtime of this function does not have an upper bound - 
+-- keys need to be tried until 1 is found that satisfies elligator requirements
 makeClientEncryption ::  CPRG g => Key -> g -> CryptoOps
 makeClientEncryption serverPkWord gen
   = makeCryptoOps privKey (pubFromWord256 serverPkWord)
@@ -81,20 +85,16 @@ makeClientEncryption serverPkWord gen
            $ L.unfoldr (\g -> Just $ cprgGenerate keySize g) gen
       
 
--- derive server encrypt/decrypt from client message and server private key
-makeServerEncryption :: Key -> ByteString -> Maybe CryptoOps
-makeServerEncryption skWord clientMessage
-  = if (BS.length clientMessage >= fstMessageLen && (not $ isNothing decrypted)
-        && (clientPkRepr == fromJust decrypted))
-      then Just cryptoOps
-      else Nothing
-    where
-      fstMessageLen = keySize + msgHeaderLen + keySize
-      sk = fromBytes $ toBytes skWord
-      (clientPkRepr, handshakeMsg) = BS.splitAt keySize $ BS.take fstMessageLen clientMessage
-      cryptoOps = makeCryptoOps sk (elligator clientPkRepr) 
-      decrypted = decrypt cryptoOps handshakeMsg
-            
+-- derive server encrypt/decrypt and the handshake payload
+-- from client handshake message and server private key
+makeServerEncryption :: Key -> ByteString -> Maybe (CryptoOps, Message)
+makeServerEncryption skWord clientMessage = do
+  hs <- eitherToMaybe (decode clientMessage :: Either String HandshakeMessage)
+  let sk = fromBytes $ toBytes skWord
+  let cryptoOps = makeCryptoOps sk $ (elligator $ clientPkRepr hs) 
+  decrypted <- decrypt cryptoOps $ hsPayload hs
+  return (cryptoOps, decrypted)
+
 makeCryptoOps ownSecretKey otherPubKey
   = CryptoOps {
     encrypt = \iv msg -> let (cipher, authTag) = encryptGCM aes (toBytes iv) "" msg in
@@ -102,14 +102,24 @@ makeCryptoOps ownSecretKey otherPubKey
     , decrypt = \msg -> do
       (EncryptedMessage iv authTag cipher) <- (eitherToMaybe $ decode msg)
       let (plaintext, decryptedAuthTag) = decryptGCM aes iv "" cipher
-      when (decryptedAuthTag /= authTag) $ fail "not the same"
+      when (decryptedAuthTag /= authTag) $ fail "authentication tag doesn't match"
       return plaintext
   }
     where
       aes = initAES $ toBytes $ diffieHellman ownSecretKey otherPubKey
+
+
+-- serialization of the messages is only formed out of cyphertext
+-- or random string representations of cryptographic keys
+-- thus leaving no fingerprintable pattern.
       
 instance Serialize EncryptedMessage where
   put (EncryptedMessage iv authTag cypher)
     = putByteString iv >> putByteString (toBytes authTag) >> putByteString cypher
   get = EncryptedMessage
          <$> (getBytes ivLen) <*> (fmap AuthTag $ getBytes authTagLen) <*> getRemaining
+
+
+instance Serialize HandshakeMessage where
+  put (HandshakeMessage repr payload) = putByteString repr >> putByteString payload
+  get = HandshakeMessage <$> getBytes keySize  <*> getRemaining

@@ -52,7 +52,7 @@ padding = 69 -- pad bytes value
 msgHead = 33 -- byte prefixing a a length prefixed message in the stream
 
 recvPipe arq decrypt =
-  decrypt =$ arq =$ conduitGet (skipWhile (== padding) >> getMsg) =$ conduitGet get
+  decryptPipe decrypt =$ arq =$ conduitGet (skipWhile (== padding) >> getMsg) =$ conduitGet get
 
 
 sendPipe packetSize arq encrypt =
@@ -62,19 +62,32 @@ tryQueueSource q = forever $ do
   item <- liftIO $ atomically $ tryReadTQueue q
   DC.yield item
 
+-- encryption
 
 data Encrypter = Encrypter {
-  run :: ByteString -> (ByteString, Encrypter)
+  runE :: ByteString -> (ByteString, Encrypter)
+}
+
+data Decrypter = Decrypter {
+  runD :: ByteString -> Maybe (ByteString, Decrypter)
 }
 
 -- to deal with the fact that the encrypt pipe needs to go
 -- through maybe values
-encryptPipe encrypt = mapAccum
+-- TODO: this code is obscure - simplify it
+
+encryptPipe encrypt = concatMapAccum
   (\mplain encrypt -> case mplain of
-           Just plain -> let (cypher, next) = run encrypt plain in (next, Just cypher)
-           Nothing -> (encrypt, Nothing)) encrypt
+           Just plain -> let (cypher, next) = runE encrypt plain in (next, [Just cypher])
+           Nothing -> (encrypt, [Nothing])) encrypt
+
+decryptPipe decrypt = concatMapAccum
+  (\cypher decrypt -> case runD decrypt cypher of
+           Just (plain, next) -> (next, [Just plain])
+           Nothing -> (decrypt, [Nothing])) decrypt 
+
 {-
-  wait for the bt stream to produce a piece
+  wait for the bt stream to produce a piece,
   if you have any payload from upstream to send, send it.
   if not pass back the piece unharmed.
 -}
@@ -100,7 +113,7 @@ pad bs targetLen padding = BS.concat [bs, BS.replicate (targetLen - BS.length bs
 
 -- messages 
 
-data ServerMessage = ServerData ByteString | AcceptConn
+data ServerMessage = ServerData ByteString | AcceptConn | RejectConn
 
 data ClientMessage = ClientData ByteString | ConnRequest Key
 
