@@ -21,8 +21,6 @@ import Network.BitSmuggler.Crypto as Crypto
 import Network.BitSmuggler.ARQ as ARQ
 import Network.BitSmuggler.Utils
 
-
-
 {-
 
 handling data streams
@@ -151,7 +149,6 @@ encodeMsg = runPut . putMsg . DS.encode
 putMsg m = putWord8 msgHead >> putWord32le (fromIntegral $ BS.length m) >> putByteString m
 getMsg = byte msgHead >> getWord32le >>= getBytes . fromIntegral
 
-
 -- bittorrent stream handlers
 sendStream = undefined
 
@@ -200,10 +197,4 @@ isolateWhileSmth =
 skipWhile p = do 
   w <- lookAhead getWord8
   if p w then skip 1 >> skipWhile p else return ()
-
-byte :: Word8 -> Get Word8
-byte w = do
-    x <- lookAhead getWord8
-    if x == w then getWord8
-              else fail $ "Expected byte: '" ++ show w ++ "' got: '" ++ show x ++ "'"
 

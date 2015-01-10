@@ -19,11 +19,15 @@ module Network.BitSmuggler.Utils (
   , InfoHash
   , binPut
   , binGet
+  , byte
+  , byteString
 ) where
 
 import Data.Byteable
-import Data.Binary as Bin
+import qualified Data.Binary as Bin
+import Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
+import Data.Word
 import Data.LargeWord
 import Data.Serialize as DS
 import Data.Serialize.Put as DS
@@ -69,6 +73,9 @@ instance Serialize InfoHash where
   get = binGet 20
   put = binPut 
 
+
+-- CEREAL 
+
 -- given a type that has a Binary instance
 -- and has a constant size serialized 
 -- write cereal put and get in terms of that
@@ -77,10 +84,23 @@ binGet sz = do
     case Bin.decodeOrFail $ BSL.fromChunks [bs] of
       Right (_, _, v) -> return v
       Left _ -> fail "shit son"
-binPut :: (Binary a) => a -> DS.Put
+binPut :: (Bin.Binary a) => a -> DS.Put
 binPut = DS.putLazyByteString . Bin.encode
 
 getRemaining = remaining >>= getBytes
+
+byte :: Word8 -> Get Word8
+byte w = do
+    x <- lookAhead getWord8
+    if x == w then getWord8
+              else fail $ "Expected byte: '" ++ show w ++ "' got: '" ++ show x ++ "'"
+
+byteString :: ByteString -> Get ByteString
+byteString bs = do
+  ahead <- lookAhead (getByteString $ BS.length bs)
+  if ahead == bs then getByteString $ BS.length bs
+                 else fail $ "Expected bs: '" ++ show bs ++ "' got: '" ++ show ahead ++ "'"
+  
 
 eitherToMaybe (Left _) = Nothing
 eitherToMaybe (Right v) = Just v
@@ -98,7 +118,6 @@ sourceTChan chan = forever $ (liftIO $ atomically $ readTChan chan) >>= DC.yield
 -- passed into the constructor is a big-endian (newtwork byte order)
 -- call this on the value passed in to make it get what you actually mean
 portNumFixEndian = (\(Right v) -> v) . runGet getWord16be  . runPut . putWord16host
-
 
 try' :: IO a -> IO (Either SomeException a)
 try' = try
