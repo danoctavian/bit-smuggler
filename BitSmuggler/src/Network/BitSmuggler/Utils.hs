@@ -12,6 +12,7 @@ module Network.BitSmuggler.Utils (
   , sourceTChan
   , alwaysRetry
   , allocAsync
+  , allocLinkedAsync
   , AsyncRes
   , portNumFixEndian
   , PortNum
@@ -87,8 +88,15 @@ try' = try
 
 alwaysRetry n = Catch.Handler $ \ (e :: SomeException) -> return True
 
--- ASYNC RESOURCES
+-- ASYNC
 
  -- async resource
 type AsyncRes a = (ReleaseKey, Async a)
 allocAsync runAsync = allocate runAsync (liftIO . cancel)
+
+allocLinkedAsync runAsync
+  = allocate ( do
+      a <- runAsync
+      link a
+      return a) (liftIO . cancel)
+

@@ -10,6 +10,7 @@ import Data.Conduit.List as DC
 import Data.ByteString as BS
 import Data.Word
 import Control.Monad
+import Control.Applicative hiding (empty)
 import Control.Exception
 import Control.Concurrent.STM.TQueue
 import Control.Concurrent.STM
@@ -18,6 +19,7 @@ import Control.Concurrent.Async
 
 import Network.BitSmuggler.Crypto as Crypto
 import Network.BitSmuggler.ARQ as ARQ
+import Network.BitSmuggler.Utils
 
 
 
@@ -27,7 +29,7 @@ handling data streams
 -}
 
 -- the size of a packet embedded in a bittorrent piece message
-packetSize = blockSize - Crypto.msgHeaderLen - ARQ.headerLen
+-- packetSize = blockSize - Crypto.msgHeaderLen - ARQ.headerLen
 
 {- the unofficial standard size of a bittorrent block
    WARNING: This is a strong assumption
@@ -45,6 +47,7 @@ packetSize = blockSize - Crypto.msgHeaderLen - ARQ.headerLen
     Eg.: some clever way of taking a piece of cyphertext and making it
     match the distribution properties of a video codec.
 -}
+blockSize :: Int
 blockSize = 16 * 1024 
 
 -- arbitrary constants
@@ -61,6 +64,13 @@ sendPipe packetSize arq encrypt =
 tryQueueSource q = forever $ do
   item <- liftIO $ atomically $ tryReadTQueue q
   DC.yield item
+
+queueSource q = forever $ do
+  item <- liftIO $ atomically $ readTQueue q
+  DC.yield item
+
+queueSink q = awaitForever (liftIO . atomically . writeTQueue q)
+
 
 -- encryption
 
@@ -98,7 +108,7 @@ outgoingSink getPiece putBack = do
   case upstream of
     (Just maybePayload) -> do
       putBack $ case maybePayload of
-        (Just payload) -> maybePayload
+        (Just payload) -> payload 
         Nothing -> piece  -- move on, nothing to change
       outgoingSink getPiece putBack
     Nothing -> return ()
@@ -115,7 +125,22 @@ pad bs targetLen padding = BS.concat [bs, BS.replicate (targetLen - BS.length bs
 
 data ServerMessage = ServerData ByteString | AcceptConn | RejectConn
 
-data ClientMessage = ClientData ByteString | ConnRequest Key
+data ClientMessage = ClientData ByteString | ConnRequest ByteString -- the pub key
+
+-- TODO: replace the following with automatic derivation of Serialize
+instance Serialize ServerMessage where
+  put AcceptConn = putWord8 0
+  put RejectConn = putWord8 1
+  put (ServerData bs) = putWord8 2 >> putByteString bs
+
+  get = (byte 0 *> return AcceptConn) <|> (byte 1 *> return RejectConn)
+        <|> (byte 2 *> (ServerData <$> getRemaining))
+
+instance Serialize ClientMessage where
+  put (ConnRequest k) = putWord8 0 >> put k
+  put (ClientData bs) = putWord8 1 >> putByteString bs
+  get = (byte 0 *> (ConnRequest <$> getRemaining))
+        <|> (byte 1 *> (ClientData <$> getRemaining))
 
 -- encodes a custom serializable msg
 encodeMsg :: Serialize a => a -> ByteString

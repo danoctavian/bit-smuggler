@@ -49,7 +49,7 @@ bitsmuggler functionality common between client and server
 
 -}
 
-data BitSmugglerException = UnsupportedFeature 
+data BitSmugglerException = UnsupportedFeature
   deriving (Show, Typeable)
 
 instance Exception BitSmugglerException 

@@ -16,3 +16,4 @@ type AckNum = Word32
 type SeqNum = Word32
 
 headerLen = sizeOf (def :: AckNum) + sizeOf (def :: SeqNum)
+

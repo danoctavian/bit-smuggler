@@ -69,6 +69,7 @@ type Key = Word256
 keySize = 32
 ivLen = 16
 authTagLen = 16
+msgHeaderLen :: Int
 msgHeaderLen = ivLen + authTagLen
 -- TODO: implement the following
 
@@ -87,13 +88,15 @@ makeClientEncryption serverPkWord gen
 
 -- derive server encrypt/decrypt and the handshake payload
 -- from client handshake message and server private key
-makeServerEncryption :: Key -> ByteString -> Maybe (CryptoOps, Message)
-makeServerEncryption skWord clientMessage = do
+tryReadHandshake :: Key -> ByteString -> Maybe (CryptoOps, Message)
+tryReadHandshake skWord clientMessage = do
   hs <- eitherToMaybe (decode clientMessage :: Either String HandshakeMessage)
-  let sk = fromBytes $ toBytes skWord
-  let cryptoOps = makeCryptoOps sk $ (elligator $ clientPkRepr hs) 
+  let cryptoOps = makeServerEncryption skWord (clientPkRepr hs)
   decrypted <- decrypt cryptoOps $ hsPayload hs
   return (cryptoOps, decrypted)
+
+makeServerEncryption skWord clientPkRepr
+  = makeCryptoOps (fromBytes $ toBytes skWord) $ elligator clientPkRepr
 
 makeCryptoOps ownSecretKey otherPubKey
   = CryptoOps {
