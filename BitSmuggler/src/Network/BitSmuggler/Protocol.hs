@@ -151,6 +151,27 @@ encodeMsg = runPut . putMsg . DS.encode
 putMsg m = putWord8 msgHead >> putWord32le (fromIntegral $ BS.length m) >> putByteString m
 getMsg = byte msgHead >> getWord32le >>= getBytes . fromIntegral
 
+
+-- bittorrent stream handlers
+sendStream = undefined
+
+recvStream = undefined
+
+
+{-
+pieceHandler :: (PieceNum -> Int -> PayloadTransformer) -> PacketHandler
+pieceHandler trans
+  = conduitParser (headerParser <|> packageParser)
+    =$= CL.mapM (\(_, pack) -> do
+--      liftIO $ debugM PackageStream.logger $ "received BT package " ++ (show pack)
+      case pack of 
+        Right p@(Piece pieceIndex offset payload) ->
+          (trans pieceIndex offset payload) >>= (return . serializePackage . (Piece pieceIndex offset))
+        Right other -> return $ serializePackage other
+        Left bs -> return $ prefixLen bs 
+        )
+-}
+
 -- conduit extras
 
 -- isolate n bytes OR until Nothing is encountered

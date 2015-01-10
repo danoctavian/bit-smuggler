@@ -1,5 +1,5 @@
 {-# LANGUAGE TypeSynonymInstances, ScopedTypeVariables #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances, UndecidableInstances #-}
 
 module Network.BitSmuggler.Utils (
     localhost
@@ -17,6 +17,8 @@ module Network.BitSmuggler.Utils (
   , portNumFixEndian
   , PortNum
   , InfoHash
+  , binPut
+  , binGet
 ) where
 
 import Data.Byteable
@@ -50,18 +52,33 @@ milli = 10 ^ 6
 instance Byteable Word128 where
   toBytes = BSL.toStrict . Bin.encode
 
+instance Serialize Word128 where
+  get = binGet 16
+  put = binPut
+
 instance Byteable Word256 where
   toBytes = BSL.toStrict . Bin.encode
+
+instance Serialize Word256 where
+  get = binGet 32
+  put = binPut
 
 -- just because i made the infohash a word160...
 -- i got this ugly thing
 instance Serialize InfoHash where
-  get = do
-    bs <- getBytes 20
+  get = binGet 20
+  put = binPut 
+
+-- given a type that has a Binary instance
+-- and has a constant size serialized 
+-- write cereal put and get in terms of that
+binGet sz = do
+    bs <- getBytes sz
     case Bin.decodeOrFail $ BSL.fromChunks [bs] of
       Right (_, _, v) -> return v
       Left _ -> fail "shit son"
-  put = DS.putLazyByteString . Bin.encode 
+binPut :: (Binary a) => a -> DS.Put
+binPut = DS.putLazyByteString . Bin.encode
 
 getRemaining = remaining >>= getBytes
 

@@ -15,9 +15,9 @@ import Data.Serialize
 import Data.Serialize.Put
 import Data.Serialize.Get
 
-import Data.Attoparsec as DA
+import Data.Attoparsec.ByteString as DA
 import Data.Attoparsec.Combinator as DACo
-import Data.Attoparsec.Char8 as DAC
+import Data.Attoparsec.ByteString.Char8 as DAC
 import Data.Attoparsec.Binary
 
 import Data.Word

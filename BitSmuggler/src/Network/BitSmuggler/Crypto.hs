@@ -11,13 +11,16 @@ import Data.ByteString as BS
 import Crypto.Cipher.Types hiding (Key)
 import Data.LargeWord
 import Data.Byteable
-import Data.Serialize
+import Data.Serialize as DS
 import Control.Applicative
 import Data.Maybe
 import Data.Serialize.Get
 import Control.Monad
 import Crypto.Random
 import Data.List as L
+
+import Crypto.Random
+import Crypto.Random.AESCtr as AESCtr
 
 import Network.BitSmuggler.Utils
 -- import Data.Serialize
@@ -90,7 +93,7 @@ makeClientEncryption serverPkWord gen
 -- from client handshake message and server private key
 tryReadHandshake :: Key -> ByteString -> Maybe (CryptoOps, Message)
 tryReadHandshake skWord clientMessage = do
-  hs <- eitherToMaybe (decode clientMessage :: Either String HandshakeMessage)
+  hs <- eitherToMaybe (DS.decode clientMessage :: Either String HandshakeMessage)
   let cryptoOps = makeServerEncryption skWord (clientPkRepr hs)
   decrypted <- decrypt cryptoOps $ hsPayload hs
   return (cryptoOps, decrypted)
@@ -101,7 +104,7 @@ makeServerEncryption skWord clientPkRepr
 makeCryptoOps ownSecretKey otherPubKey
   = CryptoOps {
     encrypt = \iv msg -> let (cipher, authTag) = encryptGCM aes (toBytes iv) "" msg in
-                            encode $ EncryptedMessage (toBytes iv) authTag cipher
+                            DS.encode $ EncryptedMessage (toBytes iv) authTag cipher
     , decrypt = \msg -> do
       (EncryptedMessage iv authTag cipher) <- (eitherToMaybe $ decode msg)
       let (plaintext, decryptedAuthTag) = decryptGCM aes iv "" cipher
@@ -111,6 +114,10 @@ makeCryptoOps ownSecretKey otherPubKey
     where
       aes = initAES $ toBytes $ diffieHellman ownSecretKey otherPubKey
 
+
+-- the crypto pseudo random number generator of choice for this app
+makeCPRG :: IO AESRNG
+makeCPRG = AESCtr.make <$> createEntropyPool
 
 -- serialization of the messages is only formed out of cyphertext
 -- or random string representations of cryptographic keys

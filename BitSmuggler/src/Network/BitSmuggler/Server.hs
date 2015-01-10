@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards, TupleSections #-}
 module Network.BitSmuggler.Server where
 
 import Prelude as P
@@ -17,6 +17,9 @@ import Control.Concurrent.STM.TVar
 import Control.Concurrent.STM.TQueue
 import Data.Time.Clock
 import Data.Conduit as DC
+import Data.Serialize as DS
+import Data.LargeWord
+import Crypto.Random
 
 import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature)
 import Network.TCP.Proxy.Socks4 as Socks4
@@ -113,11 +116,13 @@ serverConnInit secretKey stateVar handleConn local remote = do
       -- rip it a new one
       [recv, sendGet, sendPut] <- replicateM 3 (liftIO $ newTQueueIO)
       let pieceHs = PieceHooks recv sendGet sendPut
-      let remove = modActives (Map.delete remote)  stateVar
-      handleTask <- async $ runResourceT $ handleConnection pieceHs remove secretKey
+      handleTask <- async $ runResourceT $ do
+         register $ modActives (Map.delete remote)  stateVar
+         handleConnection pieceHs secretKey
+
       let conn = Conn Nothing pieceHs handleTask
-      
       modActives (Map.insert remote conn) stateVar
+
       return conn        
   
   return undefined
@@ -127,25 +132,27 @@ modActives f s = atomically $ modifyTVar s
   (\s -> s {activeConns = f $ activeConns s})
 
 
-handleConnection (PieceHooks {..}) removeConn secretKey = do
-  register $ removeConn
-
+handleConnection (PieceHooks {..}) secretKey = do
   let (sendARQ, recvARQ) = noARQ -- there's no ARQ right now
   let packetSize = blockSize - Crypto.msgHeaderLen
   
   userSend <- liftIO $ (newTQueueIO :: IO (TQueue ServerMessage))
   userRecv <- liftIO $ (newTQueueIO :: IO (TQueue ClientMessage))
 
+  -- launch receive pipe
   allocLinkedAsync $ async
-          $ (queueSource recvPiece) =$ (recvPipe recvARQ undefined)
+          $ (queueSource recvPiece) =$ (recvPipe recvARQ $ serverDecrypter secretKey)
           $$ queueSink userRecv
+
   -- wait for handshake
-
   (ConnRequest payload) <- liftIO $ atomically $ readTQueue userRecv
-  let cryptoOps = makeServerEncryption secretKey payload
 
+  let crypto = makeServerEncryption secretKey payload
+  cprg <- liftIO $ makeCPRG
+
+  -- launch send pipe
   allocLinkedAsync $ async
-         $ (tryQueueSource userSend) =$ sendPipe packetSize sendARQ undefined
+         $ (tryQueueSource userSend) =$ sendPipe packetSize sendARQ (encrypter crypto cprg) 
                 $$ outgoingSink (liftIO $ atomically $ readTQueue sendGetPiece)
                             (\p -> liftIO $ atomically $ writeTQueue sendPutBack p)
 
@@ -156,43 +163,19 @@ handleConnection (PieceHooks {..}) removeConn secretKey = do
   -- run conn handler
 --  handleConn
   return ()
- 
-{-
-  liftIO $ debugM Server.logger "initializing reverse proxy connection..."
-  [incomingPipe, outgoingOut] <- replicateM 2 (liftIO $ atomically newTChan)
-  outgoingIn <- (liftIO $ atomically newTChan)
-  let outgoingPipe = (outgoingIn, outgoingOut) :: (TChan Packet, TChan ByteString)
-  -- TODO; receive packets until you get the bootstrap package or timeout is reached
-  liftIO $ forkIO $ checkForClientConn incomingPipe outgoingPipe bootstrapEnc $
-                    makeClientConn incomingPipe outgoingPipe handleConnection
-  -- while just forwarding the sent packages...
-  liftIO $ forkIO $ noOpStreamOutgoing outgoingPipe
 
-  loader <- liftIO $ pieceLoader torrentFilePath filePath
-  return $ PacketHandlers {
-   -- incoming packets are packets from the Bittorrent reverse proxied server
-    incoming = (pieceHandler $ \i off -> transformPacket outgoingPipe),
-    outgoing = (pieceHandler $ (pieceFix (toGetPieceBlock loader) $ collectPacket incomingPipe))
-    -- outgoing packets are packets send by the connection initiator, which is the client
-  }
+serverDecrypter sk = Decrypter {
+  runD = \bs -> do
+         (cryptoOps, msg) <- tryReadHandshake sk bs
+         let applyDecrypt = Decrypter {runD = \bs ->
+                                        fmap (, applyDecrypt) $ decrypt cryptoOps bs}    
+         return (msg, applyDecrypt)
+} 
 
-
-checkForClientConn incomingPipe (inputOutgoing, outputOutgoing) bootstrapEnc makeConnection = do
-  liftIO $ debugM Server.logger "reading greeting message..."
-  greeting <- liftIO $ timeout (10 ^ 8) $ (incomingPackageSource incomingPipe
-                                      (bootstrapServerDecrypt bootstrapEnc)) $$ (DCL.take 1)
-  liftIO $ debugM Server.logger "got something for a greeting"
-  case greeting of
-    Just [ClientGreeting bs] -> do
-      liftIO $ debugM Server.logger "got a good result lads!" 
-      liftIO $ atomically $ writeTChan inputOutgoing Kill -- kill the noOp thread
-      makeConnection $ makeServerEncryption bootstrapEnc bs
-    other ->  liftIO $ do
-        debugM Server.logger $ "it's not a client connection. run a normal proxy. Received" ++ (show other)
-        -- TODO: clean this up... it's a waste of computation
-        forever (liftIO $ atomically $ readTChan incomingPipe) -- just emtpying the chan...
-  return ()
--}
+encrypter ops cprg = Encrypter {
+  runE = \bs -> let (bytes, next) = cprgGenerate 16 cprg
+          in (encrypt ops (fromRight $ DS.decode bytes :: Word128) bs, encrypter ops next)
+}
 
 revProxy ip port = return $ ProxyAction {
                             command = CONNECT
