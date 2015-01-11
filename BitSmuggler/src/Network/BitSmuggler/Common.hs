@@ -161,5 +161,3 @@ genRandBytes seed size
   = sourceLbs (BSL.pack  $ randoms (mkStdGen seed)) =$ DCB.isolate size
 
 lacksPieces = (== "") . tPieces
-
-

@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase, RecordWildCards #-}
 module Network.BitSmuggler.Protocol where
 
 import Prelude as P
@@ -20,6 +21,7 @@ import Control.Concurrent.Async
 import Network.BitSmuggler.Crypto as Crypto
 import Network.BitSmuggler.ARQ as ARQ
 import Network.BitSmuggler.Utils
+import Network.BitSmuggler.BitTorrentParser as BT
 
 {-
 
@@ -68,7 +70,6 @@ queueSource q = forever $ do
   DC.yield item
 
 queueSink q = awaitForever (liftIO . atomically . writeTQueue q)
-
 
 -- encryption
 
@@ -149,25 +150,46 @@ encodeMsg = runPut . putMsg . DS.encode
 putMsg m = putWord8 msgHead >> putWord32le (fromIntegral $ BS.length m) >> putByteString m
 getMsg = byte msgHead >> getWord32le >>= getBytes . fromIntegral
 
+
+
 -- bittorrent stream handlers
-sendStream = undefined
+btStreamHandler transform = conduitGet (get :: Get StreamChunk)
+                          =$ transform
+                          =$ conduitPut (put :: Putter StreamChunk)
 
-recvStream = undefined
 
+sendStream putPiece getPiece = do
+  awaitForPiece $ \p -> putPiece p >> getPiece
 
-{-
-pieceHandler :: (PieceNum -> Int -> PayloadTransformer) -> PacketHandler
-pieceHandler trans
-  = conduitParser (headerParser <|> packageParser)
-    =$= CL.mapM (\(_, pack) -> do
---      liftIO $ debugM PackageStream.logger $ "received BT package " ++ (show pack)
-      case pack of 
-        Right p@(Piece pieceIndex offset payload) ->
-          (trans pieceIndex offset payload) >>= (return . serializePackage . (Piece pieceIndex offset))
-        Right other -> return $ serializePackage other
-        Left bs -> return $ prefixLen bs 
-        )
--}
+type FileFix = BT.Message -> IO BT.Message
+recvStream :: (Maybe InfoHash -> Maybe FileFix) -> (ByteString -> IO ())
+              -> ConduitM StreamChunk StreamChunk IO ()
+recvStream getFileFixer putRecv = do
+  upstream <- await
+  case upstream of 
+    Just msg -> do
+      case getFileFixer $ hsInfoHash msg of
+        Just fix -> do
+          leftover msg -- put it back
+          awaitForPiece $ \piece -> do
+            putRecv $ block piece
+            -- TODO: don't fix it if it ain't broken
+            -- pieces that are not tampered with should not undergo fixing
+            fix piece
+        Nothing -> DC.yield msg >> awaitForever (\m -> DC.yield m)
+    Nothing -> return ()  
+
+hsInfoHash (HandShake _ ih _) = Just ih
+hsInfoHash _ = Nothing
+
+awaitForPiece :: (BT.Message -> IO BT.Message) 
+              -> (ConduitM StreamChunk StreamChunk IO ())
+awaitForPiece f
+  = awaitForever
+      (\case
+        (MsgChunk sz p@(Piece {..})) -> (liftIO $ f p) >>= DC.yield . (MsgChunk sz)
+        other -> DC.yield other)
+
 
 -- conduit extras
 
