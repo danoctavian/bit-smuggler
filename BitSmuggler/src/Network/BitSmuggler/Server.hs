@@ -20,6 +20,7 @@ import Data.Conduit as DC
 import Data.Serialize as DS
 import Data.LargeWord
 import Crypto.Random
+import Data.Tuple as Tup
 
 import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature)
 import Network.TCP.Proxy.Socks4 as Socks4
@@ -27,6 +28,7 @@ import Network.TCP.Proxy.Socks4 as Socks4
 import Network.BitSmuggler.Common hiding (contactFiles)
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.Protocol
+import Network.BitSmuggler.ARQ as ARQ
 
 import Data.Map.Strict as Map
 
@@ -60,11 +62,7 @@ data Connection = Conn {
   , handlerTask :: Async ()
 }
 
-data PieceHooks = PieceHooks {
-    recvPiece :: TQueue ByteString
-  , sendGetPiece :: TQueue ByteString
-  , sendPutBack :: TQueue ByteString
-}
+data ProxyDir = Forward | Reverse deriving (Show, Eq)
 
 listen :: ServerConfig -> (ConnData -> IO ()) -> IO ()
 listen config handle = runResourceT $ do
@@ -79,20 +77,21 @@ listen config handle = runResourceT $ do
  
   serverState <- liftIO $ newTVarIO $ ServerState {activeConns = Map.empty}
 
-  let onConn = serverConnInit (serverSecretKey config) serverState handle
+  let fileFix = undefined 
+  let onConn = serverConnInit (serverSecretKey config) serverState handle fileFix
 
   -- setup proxies
   -- reverse
   allocAsync $ async $ Proxy.run $ Proxy.Config {
                  proxyPort = revProxyPort btConf
-               , initHook = P.flip onConn 
+               , initHook = P.flip (onConn Reverse)
                , handshake = revProxy (read localhost :: IP) (pubBitTorrentPort btConf)
              }
 
   -- forward socks 
   allocAsync $ async $ Proxy.run $ Proxy.Config {
                  proxyPort = socksProxyPort btConf
-               , initHook = onConn 
+               , initHook = onConn Forward
                , handshake = Socks4.serverProtocol
              }
   -- tell client to use the files
@@ -102,11 +101,9 @@ listen config handle = runResourceT $ do
   return ()
 
 
--- a no-op for arq
-noARQ = undefined
 
 -- TODO: check this out https://www.youtube.com/watch?v=uMK0prafzw0
-serverConnInit secretKey stateVar handleConn local remote = do
+serverConnInit secretKey stateVar handleConn fileFix direction local remote = do
   -- check if connection to this remote address is still active
   maybeConn <- atomically $ fmap (Map.lookup remote . activeConns) $ readTVar stateVar
 
@@ -124,8 +121,10 @@ serverConnInit secretKey stateVar handleConn local remote = do
       modActives (Map.insert remote conn) stateVar
 
       return conn        
-  
-  return undefined
+
+  let streams = (if direction == Reverse then Tup.swap else P.id) $
+                makeStreams (pieceHooks conn) fileFix
+  return $ DataHooks {incoming = P.fst streams, outgoing = P.snd streams} 
 
 
 modActives f s = atomically $ modifyTVar s
@@ -133,7 +132,7 @@ modActives f s = atomically $ modifyTVar s
 
 
 handleConnection (PieceHooks {..}) secretKey = do
-  let (sendARQ, recvARQ) = noARQ -- there's no ARQ right now
+  let (recvARQ, sendARQ) = noARQ -- there's no ARQ right now
   let packetSize = blockSize - Crypto.msgHeaderLen
   
   userSend <- liftIO $ (newTQueueIO :: IO (TQueue ServerMessage))

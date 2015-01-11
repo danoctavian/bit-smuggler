@@ -18,6 +18,7 @@ import Data.Torrent
 import Data.Word
 import Data.Typeable
 import Data.ByteString as BS
+import qualified Data.Serialize as DS
 import Control.Retry
 import Control.Monad.IO.Class
 import Control.Concurrent.Async
@@ -49,7 +50,7 @@ bitsmuggler functionality common between client and server
 
 -}
 
-data BitSmugglerException = UnsupportedFeature
+data BitSmugglerException = UnsupportedFeature | TorrentFileIntegrityFail
   deriving (Show, Typeable)
 
 instance Exception BitSmugglerException 
@@ -142,9 +143,12 @@ createContactFile contactFile cache dir =
           pieces <- hashPieces [dataFile] (fromIntegral tLength)
           return $ torrentFile {tInfo = sf {tPieces = BSL.fromChunks pieces}}
           else return torrentFile
-        BSL.writeFile torrentFilePath (bPack $ serializeTorrent torrentFile) 
+        let computedIH = fromRight $ DS.decode $ computeInfoHash tFileContent
+        when (computedIH /= infoHash) $ throwIO TorrentFileIntegrityFail
+        BSL.writeFile torrentFilePath (bPack $ serializeTorrent tFileContent) 
 
-      return (dataFile, if useDHT then Left $ infoHash else Right torrentFilePath)
+      return (infoHash
+             , (dataFile, if useDHT then Left $ infoHash else Right torrentFilePath))
 
     RealFile {..} -> errorM logger "real files not supported"
                      >> throwIO UnsupportedFeature

@@ -2,6 +2,7 @@
 module Network.BitSmuggler.Protocol where
 
 import Prelude as P
+import Data.Maybe
 import Data.Serialize as DS
 import Data.Serialize.Put
 import Data.Serialize.Get
@@ -19,7 +20,6 @@ import Control.Monad.IO.Class
 import Control.Concurrent.Async
 
 import Network.BitSmuggler.Crypto as Crypto
-import Network.BitSmuggler.ARQ as ARQ
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.BitTorrentParser as BT
 
@@ -55,7 +55,8 @@ padding = 69 -- pad bytes value
 msgHead = 33 -- byte prefixing a a length prefixed message in the stream
 
 recvPipe arq decrypt =
-  decryptPipe decrypt =$ arq =$ conduitGet (skipWhile (== padding) >> getMsg) =$ conduitGet get
+  decryptPipe decrypt =$ DC.catMaybes =$ arq
+  =$ conduitGet (skipWhile (== padding) >> getMsg) =$ conduitGet get
 
 
 sendPipe packetSize arq encrypt =
@@ -153,22 +154,38 @@ getMsg = byte msgHead >> getWord32le >>= getBytes . fromIntegral
 
 
 -- bittorrent stream handlers
+
+data PieceHooks = PieceHooks {
+    recvPiece :: TQueue ByteString
+  , sendGetPiece :: TQueue ByteString
+  , sendPutBack :: TQueue ByteString
+}
+
+
+makeStreams (PieceHooks {..}) getFileFixer
+  = (btStreamHandler $ recvStream getFileFixer
+                                   (liftIO . atomically . writeTQueue recvPiece)
+   , btStreamHandler $ sendStream  (liftIO . atomically . writeTQueue sendGetPiece)
+                                   (liftIO $ atomically $ readTQueue sendPutBack))
+
+
 btStreamHandler transform = conduitGet (get :: Get StreamChunk)
                           =$ transform
                           =$ conduitPut (put :: Putter StreamChunk)
 
 
 sendStream putPiece getPiece = do
-  awaitForPiece $ \p -> putPiece p >> getPiece
+  awaitForPiece $ \p -> putPiece (block p) >> fmap (\b -> p {block = b}) getPiece 
 
 type FileFix = BT.Message -> IO BT.Message
-recvStream :: (Maybe InfoHash -> Maybe FileFix) -> (ByteString -> IO ())
+recvStream :: (Maybe InfoHash -> IO (Maybe FileFix)) -> (ByteString -> IO ())
               -> ConduitM StreamChunk StreamChunk IO ()
 recvStream getFileFixer putRecv = do
   upstream <- await
   case upstream of 
     Just msg -> do
-      case getFileFixer $ hsInfoHash msg of
+      maybeFix <- liftIO $ getFileFixer $ hsInfoHash msg
+      case maybeFix of
         Just fix -> do
           leftover msg -- put it back
           awaitForPiece $ \piece -> do
