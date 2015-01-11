@@ -177,24 +177,33 @@ btStreamHandler transform = conduitGet (get :: Get StreamChunk)
 sendStream putPiece getPiece = do
   awaitForPiece $ \p -> putPiece (block p) >> fmap (\b -> p {block = b}) getPiece 
 
-type FileFix = BT.Message -> IO BT.Message
-recvStream :: (Maybe InfoHash -> IO (Maybe FileFix)) -> (ByteString -> IO ())
+type LoadBlock = (Int, Block) -> ByteString 
+
+recvStream :: (Maybe InfoHash -> IO (Maybe LoadBlock)) -> (ByteString -> IO ())
               -> ConduitM StreamChunk StreamChunk IO ()
-recvStream getFileFixer putRecv = do
+recvStream getBlockLoader putRecv = do
   upstream <- await
   case upstream of 
     Just msg -> do
-      maybeFix <- liftIO $ getFileFixer $ hsInfoHash msg
-      case maybeFix of
-        Just fix -> do
+      maybeLoader <- liftIO $ getBlockLoader $ hsInfoHash msg
+      case maybeLoader of
+        Just blockLoader -> do
           leftover msg -- put it back
           awaitForPiece $ \piece -> do
             putRecv $ block piece
             -- TODO: don't fix it if it ain't broken
             -- pieces that are not tampered with should not undergo fixing
-            fix piece
+            return $ fixPiece piece blockLoader
+
+        -- if there is no way to fix the bittorrent stream
+        -- just stream it without pushing received pieces to putRecv
         Nothing -> DC.yield msg >> awaitForever (\m -> DC.yield m)
     Nothing -> return ()  
+
+fixPiece p@(Piece {..}) loadBlock =
+  let goodBlock = loadBlock (index, Block {blockOffset = begin,
+                                        blockSize  = BS.length block})
+  in p {block = goodBlock}
 
 hsInfoHash (HandShake _ ih _) = Just ih
 hsInfoHash _ = Nothing
@@ -206,7 +215,6 @@ awaitForPiece f
       (\case
         (MsgChunk sz p@(Piece {..})) -> (liftIO $ f p) >>= DC.yield . (MsgChunk sz)
         other -> DC.yield other)
-
 
 -- conduit extras
 

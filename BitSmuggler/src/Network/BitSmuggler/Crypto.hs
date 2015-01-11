@@ -129,7 +129,6 @@ instance Serialize EncryptedMessage where
   get = EncryptedMessage
          <$> (getBytes ivLen) <*> (fmap AuthTag $ getBytes authTagLen) <*> getRemaining
 
-
 instance Serialize HandshakeMessage where
   put (HandshakeMessage repr payload) = putByteString repr >> putByteString payload
   get = HandshakeMessage <$> getBytes keySize  <*> getRemaining

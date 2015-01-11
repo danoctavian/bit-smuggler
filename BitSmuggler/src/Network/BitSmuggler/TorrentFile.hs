@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE  RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Network.BitSmuggler.TorrentFile (
     hashPieces
@@ -10,10 +10,12 @@ import Crypto.Hash.SHA1 as SHA1
 import Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 
+import Data.Torrent
 import Data.Conduit.Binary as DCB
 import Data.Conduit as DC
 import Data.Conduit.List
 import Control.Monad
+import Control.Exception
 import Prelude as P
 import Control.Monad.Trans.Resource
 import Data.Torrent
@@ -22,8 +24,13 @@ import Data.BEncode
 import Data.Maybe
 import Data.Text as T
 import Data.Text.Encoding as T
-
+import System.IO.MMap
 import Data.ByteString.Base16 as Base16
+
+import Network.BitSmuggler.BitTorrentParser
+import Network.BitSmuggler.Utils
+
+
 
 {-
 
@@ -55,3 +62,40 @@ textToInfoHash text
     hashLen = BS.length hashStr
     hashStr = T.encodeUtf8 text
     (ihStr, inv) = Base16.decode hashStr
+
+
+{-
+
+== File fixing == 
+
+File fixing means correcting the payload of a bittorrent block
+sent in a piece message to the right value (if it has been tampered with
+by BitSmuggler) before it reaches the real bittorrent client.
+
+This is so the client doesn't misbehave when seeing a bunch of hash 
+failures. if a way is found to tell the client to ignore those hash fails
+this technique is no longer necessary. 
+
+The only reason you might want to still use it would be for undetectability
+purposes. By using it you would make sure that other peers joining the swarm
+will be served correct pieces by the bittorrent clients so they wouldn't
+see a bunch of hash fails themselves.
+
+-- REQUIREMENT: FILE DATA MUST BE AVAILABLE  --
+
+obviously the requirement is that the file data exists locally so the
+correction can be done. How to get it is a separate issue.
+
+-}
+
+
+blockPos totalLen pieceLen (index, block)
+  = (pieceLen * index + (fromIntegral $ blockOffset block), fromIntegral $ blockSize block)
+
+makeBlockLoader (SingleFile {..}) filePath = do
+  file <- mmapFileByteStringLazy filePath Nothing
+  return $ \pos -> -- this function is "pure" but it does lazy i/o
+    let (start, len) =  blockPos (fromIntegral tLength) (fromIntegral tPieceLength) pos
+    in BSL.toStrict $ BSL.take len $ BSL.drop start file
+
+

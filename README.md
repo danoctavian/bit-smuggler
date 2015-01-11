@@ -18,7 +18,7 @@ https://github.com/danoctavian/free-network-protocol
 
 https://github.com/danoctavian/bittorrent-client-control
 
-the above are not yet cabalized so you need to do
+the above are not yet in hackage so you need to do
 
 cabal sandbox add-source
 

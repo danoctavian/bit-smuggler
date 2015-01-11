@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, DeriveDataTypeable, OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards, OverloadedStrings #-}
 {-# LANGUAGE PackageImports #-}
 module Network.BitSmuggler.Common (
     ConnData (..)
@@ -16,7 +16,6 @@ import Data.IP
 import Data.ByteString
 import Data.Torrent 
 import Data.Word
-import Data.Typeable
 import Data.ByteString as BS
 import qualified Data.Serialize as DS
 import Control.Retry
@@ -50,11 +49,6 @@ bitsmuggler functionality common between client and server
 
 -}
 
-data BitSmugglerException = UnsupportedFeature | TorrentFileIntegrityFail
-  deriving (Show, Typeable)
-
-instance Exception BitSmugglerException 
-
 logger = "BitSmuggler.common"
 
 data ConnData = ConnData {
@@ -82,7 +76,6 @@ data ContactFile = FakeFile {
                      -- a single file torrent; missing piece data
                    , torrentFile :: Torrent 
                    , infoHash :: InfoHash -- check whether this file is good
-                   , useDHT :: Bool
                  }
                  | RealFile InfoHash
 
@@ -137,18 +130,17 @@ createContactFile contactFile cache dir =
       let dataFile = dir </> fname
       createWithCache cache infoHash dataFile (genRandBytes seed (fromIntegral tLength))
 
+      -- prepare the torrent file
       let torrentFilePath = dir </> fname
-      when (not useDHT) $ do -- dump the torrent file
-        tFileContent <- if (lacksPieces $ tInfo torrentFile) then do
-          pieces <- hashPieces [dataFile] (fromIntegral tLength)
-          return $ torrentFile {tInfo = sf {tPieces = BSL.fromChunks pieces}}
-          else return torrentFile
-        let computedIH = fromRight $ DS.decode $ computeInfoHash tFileContent
-        when (computedIH /= infoHash) $ throwIO TorrentFileIntegrityFail
-        BSL.writeFile torrentFilePath (bPack $ serializeTorrent tFileContent) 
+      tFileContent <- if (lacksPieces $ tInfo torrentFile) then do
+        pieces <- hashPieces [dataFile] (fromIntegral tLength)
+        return $ torrentFile {tInfo = sf {tPieces = BSL.fromChunks pieces}}
+        else return torrentFile
+      let computedIH = fromRight $ DS.decode $ computeInfoHash tFileContent
+      when (computedIH /= infoHash) $ throwIO TorrentFileIntegrityFail
+      BSL.writeFile torrentFilePath (bPack $ serializeTorrent tFileContent) 
 
-      return (infoHash
-             , (dataFile, if useDHT then Left $ infoHash else Right torrentFilePath))
+      return (infoHash, (dataFile, torrentFilePath))
 
     RealFile {..} -> errorM logger "real files not supported"
                      >> throwIO UnsupportedFeature

@@ -85,8 +85,6 @@ getMsgChunk = do
   len <- getWord32be
   MsgChunk len <$> (DS.isolate (fromIntegral len) get)
 
-
-
 instance Serialize Message where
   put KeepAlive       = return ()
   put Choke           = p8 0

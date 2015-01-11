@@ -76,9 +76,10 @@ listen config handle = runResourceT $ do
   files <- setupContactFiles (contactFiles config) (fileCachePath config)
  
   serverState <- liftIO $ newTVarIO $ ServerState {activeConns = Map.empty}
+  register $ cleanState serverState
 
-  let fileFix = undefined 
-  let onConn = serverConnInit (serverSecretKey config) serverState handle fileFix
+  let fileFixer = undefined 
+  let onConn = serverConnInit (serverSecretKey config) serverState handle fileFixer
 
   -- setup proxies
   -- reverse
@@ -100,7 +101,13 @@ listen config handle = runResourceT $ do
   -- in case of torrent app crash - restart it 
   return ()
 
+-- server cleanup
+cleanState stateVar = do
+  state <- atomically $ readTVar stateVar
+  forM (P.map snd $ Map.toList $ activeConns state) $ killConn
+  return ()
 
+killConn = cancel . handlerTask
 
 -- TODO: check this out https://www.youtube.com/watch?v=uMK0prafzw0
 serverConnInit secretKey stateVar handleConn fileFix direction local remote = do
@@ -115,7 +122,7 @@ serverConnInit secretKey stateVar handleConn fileFix direction local remote = do
       let pieceHs = PieceHooks recv sendGet sendPut
       handleTask <- async $ runResourceT $ do
          register $ modActives (Map.delete remote)  stateVar
-         handleConnection pieceHs secretKey
+         handleConnection pieceHs secretKey handleConn
 
       let conn = Conn Nothing pieceHs handleTask
       modActives (Map.insert remote conn) stateVar
@@ -131,7 +138,7 @@ modActives f s = atomically $ modifyTVar s
   (\s -> s {activeConns = f $ activeConns s})
 
 
-handleConnection (PieceHooks {..}) secretKey = do
+handleConnection (PieceHooks {..}) secretKey userHandle = do
   let (recvARQ, sendARQ) = noARQ -- there's no ARQ right now
   let packetSize = blockSize - Crypto.msgHeaderLen
   
@@ -160,8 +167,12 @@ handleConnection (PieceHooks {..}) secretKey = do
   liftIO $ atomically $ writeTQueue userSend AcceptConn  
 
   -- run conn handler
---  handleConn
+  liftIO $ userHandle $ ConnData {
+                          connSend = atomically . writeTQueue userSend . ServerData
+                        , connRecv = fmap unwrapData $ atomically $ readTQueue userRecv}
   return ()
+
+unwrapData (ClientData d) = d
 
 serverDecrypter sk = Decrypter {
   runD = \bs -> do

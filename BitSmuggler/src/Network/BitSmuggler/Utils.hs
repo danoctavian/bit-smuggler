@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeSynonymInstances, ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleInstances, UndecidableInstances #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 
 module Network.BitSmuggler.Utils (
     localhost
@@ -21,8 +22,10 @@ module Network.BitSmuggler.Utils (
   , binGet
   , byte
   , byteString
+  , BitSmugglerException (..)
 ) where
 
+import Data.Typeable
 import Data.Byteable
 import qualified Data.Binary as Bin
 import Data.ByteString as BS
@@ -44,6 +47,15 @@ import Control.Concurrent.Async
 import Control.Retry
 import qualified Control.Monad.Catch as Catch
 import Network.BitTorrent.ClientControl (PortNum, InfoHash)
+
+
+-- exceptions 
+
+-- TODO: move this to a more appropriate place
+data BitSmugglerException = UnsupportedFeature | TorrentFileIntegrityFail
+  deriving (Show, Typeable)
+
+instance Exception BitSmugglerException
 
 -- constants
 
@@ -135,4 +147,5 @@ allocLinkedAsync runAsync
       a <- runAsync
       link a
       return a) (liftIO . cancel)
+
 
