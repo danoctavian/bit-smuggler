@@ -7,6 +7,10 @@ import Control.Monad.IO.Class
 import Data.Map.Lazy as Map
 import System.IO.Temp
 import Data.Conduit
+import Data.Conduit.Binary as DC
+import Data.Serialize
+import Data.Conduit.Cereal
+import Control.Monad.Trans.Resource
 import qualified Data.Conduit.List as DCL 
 import System.IO
 import Control.Monad.IO.Class
@@ -19,6 +23,8 @@ import Data.Torrent
 import Data.Maybe
 
 import Network.BitSmuggler.TorrentFile as TF
+import Network.BitSmuggler.BitTorrentParser as BT
+
 
 main :: IO ()
 main = hspec spec
@@ -43,6 +49,24 @@ spec = do
       (Right torrentFile) <- fmap readTorrent $ BSL.readFile dataFileSmallTFile
       computeInfoHash torrentFile
         `shouldBe` (fromJust $textToInfoHash "b5724467037c1c4192049b84bba92ea2bdf3d445")
+
+  describe "makeBlockLoader" $ do
+    it "loads the same blocks as the ones streamed in a bittorrent session" $ do
+      let torrentStream = "test-data/seedClientCapture"
+      (Right torrentFile) <- fmap readTorrent $ BSL.readFile dataFileSmallTFile
+      blockLoad <- makeBlockLoader (tInfo torrentFile) dataFileSmall
+      chunks <- runResourceT $ sourceFile torrentStream 
+              =$ conduitGet (get :: Get StreamChunk) $$ DCL.consume
+      let justPieces = P.filter isPiece $ P.drop 0 chunks 
+      (P.length justPieces >= 1) `shouldBe` True
+      sames <- forM justPieces $ \(MsgChunk _ p) -> do
+        return $ blockLoad (fromIntegral $ BT.index p, Block {blockOffset = begin p,
+                        blockSize  = BS.length $ block p}) == (block p)
+      P.length (P.filter (P.id) sames) `shouldBe` P.length justPieces
+      return ()
+        
+        
+        
   return ()
 
 

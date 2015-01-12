@@ -147,5 +147,3 @@ allocLinkedAsync runAsync
       a <- runAsync
       link a
       return a) (liftIO . cancel)
-
-

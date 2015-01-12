@@ -138,9 +138,12 @@ toW8 :: Char -> Word8
 toW8 = fromIntegral . ord
 
 runTestParse = do
-  let testFile = "../testdata/incomingBTTraffic"
+  let testFile = "test-data/seedClientCapture"
   chunks <- runResourceT $ sourceFile testFile
-               =$ conduitGet (get :: Get StreamChunk) $$ DCL.take 10000
-  P.putStrLn (show $ P.length chunks)
+               =$ conduitGet (get :: Get StreamChunk) $$ DCL.take 40
+  P.putStrLn (show $ P.length $ P.filter isPiece chunks) -- P.all (== 16384) $ P.map getBlock $ P.filter isPiece chunks)
   return ()
 
+isPiece (MsgChunk _ (Piece  _ _ _)) = True
+isPiece _ = False
+getBlock (MsgChunk _ p@(Piece _ _ _)) = BS.length $ block p

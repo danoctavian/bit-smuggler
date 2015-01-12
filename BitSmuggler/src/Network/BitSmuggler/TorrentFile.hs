@@ -4,6 +4,7 @@ module Network.BitSmuggler.TorrentFile (
     hashPieces
   , computeInfoHash
   , textToInfoHash
+  , makeBlockLoader
 ) where
 
 import Crypto.Hash.SHA1 as SHA1
@@ -29,8 +30,6 @@ import Data.ByteString.Base16 as Base16
 
 import Network.BitSmuggler.BitTorrentParser
 import Network.BitSmuggler.Utils
-
-
 
 {-
 
@@ -88,14 +87,14 @@ correction can be done. How to get it is a separate issue.
 
 -}
 
-
-blockPos totalLen pieceLen (index, block)
+blockPos pieceLen (index, block)
   = (pieceLen * index + (fromIntegral $ blockOffset block), fromIntegral $ blockSize block)
 
 makeBlockLoader (SingleFile {..}) filePath = do
-  file <- mmapFileByteStringLazy filePath Nothing
+  -- TODO: figure out why memory mapping doesn't work
+  -- lazy loading the whole file isn't an option.
+  -- mmapFileByteStringLazy filePath Nothing
+  file <- BSL.readFile filePath
   return $ \pos -> -- this function is "pure" but it does lazy i/o
-    let (start, len) =  blockPos (fromIntegral tLength) (fromIntegral tPieceLength) pos
+    let (start, len) =  blockPos (fromIntegral tPieceLength) pos
     in BSL.toStrict $ BSL.take len $ BSL.drop start file
-
-

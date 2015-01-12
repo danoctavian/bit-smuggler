@@ -85,7 +85,7 @@ initCaptureHook incFile outFile a1 a2 = do
   outHook <- captureHook outFile
   return $ DataHooks incHook outHook 
 
-captureHook :: Sys.FilePath -> IO (BS.ByteString -> IO BS.ByteString)
+--captureHook :: Sys.FilePath -> IO (BS.ByteString -> IO BS.ByteString)
 captureHook file = do
   rgen <- newStdGen
   let r = (fst $ random rgen) :: Int
@@ -96,7 +96,8 @@ captureHook file = do
       sourceTChan tchan {- =$ (CL.map (DS.encode . NetworkChunk)) -}  $$ sinkHandle fileH
   debugM logger $ "done setting up capture"
  
-  return $ \bs -> atomically $ writeTChan tchan bs >> return bs
+  return $ awaitForever
+               (\bs -> (liftIO $ atomically $ writeTChan tchan bs) >> DC.yield bs)
  
 
 trafficCapture = do
@@ -106,7 +107,8 @@ trafficCapture = do
             , handshake = Socks4.serverProtocol
        }
 
-printChunk bs = debugM logger (show $ BS.length bs) >> return bs
+printChunk = awaitForever $
+                \bs -> (liftIO $ debugM logger (show $ BS.length bs)) >> DC.yield bs
 
 trafficProxy = do
   Proxy.run $ Proxy.Config { proxyPort = 1080
@@ -132,14 +134,13 @@ webUIPortPeer = 8000
 trackerPort = 6666
 utorrentDefCreds = ("admin", "")
 
-milli = 10 ^ 6
 
 testRun = do
   updateGlobalLogger logger (setLevel DEBUG)
   peerSeedTalk "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_0/"
                        "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_1/"
-                       "/home/dan/testdata/sample.txt"
-                       "/home/dan/testdata/sample100.torrent"
+                       "../BitSmuggler/test-data/randFileSmall"
+                       "../BitSmuggler/test-data/randFileSmall.torrent"
 
 -- script - 2 utorrent clients talk to get a file 
 peerSeedTalk :: Sh.FilePath -> Sh.FilePath -> Sh.FilePath -> Sh.FilePath -> IO ()
@@ -153,7 +154,7 @@ peerSeedTalk seedPath peerPath dataFilePath tFilePath = runResourceT $ do
 
   trackEvents <- liftIO $ newTChanIO 
   tracker <- allocAsync $ async $ runTracker
-                        $ Tracker.Config {listenPort = 6666, events = Just trackEvents}
+                        $ Tracker.Config {listenPort = 6969, events = Just trackEvents}
 
   liftIO $ waitFor (== Booting) trackEvents
   liftIO $ debugM logger "tracker is booting"
@@ -214,7 +215,6 @@ runUTClient path = async $ shelly $ chdir path
 
 
 -- treats an async as a resource that needs to be canceled on close
-allocAsync runAsync = allocate runAsync (liftIO . cancel) 
 
 waitFor cond chan = do
   n <- atomically $ readTChan chan
