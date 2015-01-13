@@ -23,6 +23,7 @@ module Network.BitSmuggler.Utils (
   , byte
   , byteString
   , BitSmugglerException (..)
+  , hoistMaybe
 ) where
 
 import Data.Typeable
@@ -43,6 +44,7 @@ import Control.Monad.IO.Class
 import Control.Exception
 import Control.Monad
 import Control.Monad.Trans.Resource
+import Control.Monad.Trans.Maybe
 import Control.Concurrent.Async
 import Control.Retry
 import qualified Control.Monad.Catch as Catch
@@ -116,6 +118,9 @@ byteString bs = do
 
 eitherToMaybe (Left _) = Nothing
 eitherToMaybe (Right v) = Just v
+
+hoistMaybe :: (Monad m) => Maybe a -> MaybeT m a
+hoistMaybe = maybe mzero return
 
 fromRight (Right v) = v
 

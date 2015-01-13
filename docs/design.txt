@@ -261,8 +261,6 @@ server needs to catch the first message from the client to setup encryption.
 for the protocols overlayed over the bittorrent stream a measure of "time"
 is how many bittorrent blocks pass between the clients.
 
-
-
 -------------------------------------------------
 -- non-official standard for block size
 -- warning: this assumption is strong but for now it simplifies my design
@@ -277,3 +275,70 @@ signature to ensure that all resources are properly handled
 == implementation notes ==
 use tqueue wherever you were using a tchan; it's faster and the right choice
 wherever you don't need the dupChan functionality (a broadcast chan)
+
+=== NEGOTIATE RECONNECTION ===
+
+solution 1 - probably correct
+  every disconnect requires that server and client renegotiate the keys 
+  and client presents a token (cookie)
+  that can uniquely identify the previous conn
+
+  this sounds a lot more like other existing systems (use of http - stateless
+  in stateful web apps - uses cookies to reidentify a certain session and client) 
+
+  so it's more likely the correct way of doing things
+
+  there is some similarity between the bittorrent tunneling medium here and http
+  since controlled/uncontrolled disconnects may happen.
+
+  shitty part 
+    * my pipes don't look that nice anymore :( - harder to implement
+
+  HOW TO
+  * start all conns in the same way - get the hello message from the client
+  in which he may say it's his first time or it's a reconnect (presents cookie)  
+
+  * if it's new proceed like now, no big deal
+
+  * if it's a cookie, look it up and pull out the connection.
+
+
+
+solution 2 - probably wrong
+  based on source of connection (ip, port) and file being used attempt to
+  identify which was your previous connection
+
+  why it sucks:
+    suppose 2 clients behind same NAT connect to you also they both happen to use
+    the same torrent file. there's no way to differentiate between thier sessions 
+    if both disconnect and afterwards attempt to reconnect.
+    Actually there is: factor in their ip, infohash and peerid. peerid should
+    should be the unique identifier if their torrent client works correctly.
+    But it still sucks.
+    ATTACK:
+    Adversary tampers with the peerid of connecting clients and changes it
+    to some random value (with a bit of tcp reconstruction on the first packet)
+    client still torrents because it doesn't really care about ids that much but
+    we will never recover the session. so he can just cut the connection once
+  
+    You won't be leaking data since the very first message decides the encryption
+    for the rest of the session but you can't recover the interrupted session of 
+    a bitsmuggler client.
+
+    * this is nasty for swarm changes as well...
+
+=== FILE FIXING ===
+
+goal: repair a piece message containing a payload inserted by bitsmuggler
+before it gets to the utorrrent client
+
+PERILS
+* repairing what's not broken -> only fix pieces that were tampered with fixing
+other stuff may actually blow the cover (fixing a piece tampered with by 
+the adversary)
+
+* multiple connections from the same peer
+
+the convention is that a peer should make  1 connection. 
+
+but what if he is behind NAT, so 

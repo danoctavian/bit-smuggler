@@ -62,7 +62,6 @@ data Connection = Conn {
   , handlerTask :: Async ()
 }
 
-data ProxyDir = Forward | Reverse deriving (Show, Eq)
 
 listen :: ServerConfig -> (ConnData -> IO ()) -> IO ()
 listen config handle = runResourceT $ do
@@ -78,27 +77,16 @@ listen config handle = runResourceT $ do
   serverState <- liftIO $ newTVarIO $ ServerState {activeConns = Map.empty}
   register $ cleanState serverState
 
-  let fileFixer = undefined 
+  let fileFixer = findPieceLoader files
   let onConn = serverConnInit (serverSecretKey config) serverState handle fileFixer
 
   -- setup proxies
-  -- reverse
-  allocAsync $ async $ Proxy.run $ Proxy.Config {
-                 proxyPort = revProxyPort btConf
-               , initHook = P.flip (onConn Reverse)
-               , handshake = revProxy (read localhost :: IP) (pubBitTorrentPort btConf)
-             }
 
-  -- forward socks 
-  allocAsync $ async $ Proxy.run $ Proxy.Config {
-                 proxyPort = socksProxyPort btConf
-               , initHook = onConn Forward
-               , handshake = Socks4.serverProtocol
-             }
+  (reverseProxy, forwardProxy) <- startProxies (btClientConfig config) onConn
   -- tell client to use the files
 
   -- wait for it...
-  -- in case of torrent app crash - restart it 
+  liftIO $ waitBoth (snd reverseProxy) (snd forwardProxy)
   return ()
 
 -- server cleanup

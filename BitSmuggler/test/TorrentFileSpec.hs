@@ -65,8 +65,6 @@ spec = do
       P.length (P.filter (P.id) sames) `shouldBe` P.length justPieces
       return ()
         
-        
-        
   return ()
 
 

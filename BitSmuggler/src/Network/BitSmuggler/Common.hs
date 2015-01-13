@@ -10,8 +10,12 @@ module Network.BitSmuggler.Common (
   , createContactFile
   , setupBTClient
   , genRandBytes
+  , findPieceLoader
+  , ProxyDir (..)
+  , startProxies
 ) where
 
+import Prelude as P
 import Data.IP
 import Data.ByteString
 import Data.Torrent 
@@ -22,6 +26,7 @@ import Control.Retry
 import Control.Monad.IO.Class
 import Control.Concurrent.Async
 import Control.Monad.Trans.Resource
+import Control.Monad.Trans.Maybe
 import Control.Concurrent
 import Control.Exception
 import Control.Monad
@@ -42,6 +47,9 @@ import Network.BitTorrent.ClientControl as CC hiding (Torrent)
 import Network.BitSmuggler.TorrentClientProc as TC
 import Network.BitSmuggler.FileCache as FC
 import Network.BitSmuggler.TorrentFile
+
+import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature)
+import Network.TCP.Proxy.Socks4 as Socks4
 
 {- 
 
@@ -157,3 +165,40 @@ genRandBytes seed size
   = sourceLbs (BSL.pack  $ randoms (mkStdGen seed)) =$ DCB.isolate size
 
 lacksPieces = (== "") . tPieces
+
+-- file fixing 
+findPieceLoader contactFiles maybeIH = runMaybeT $ do
+  ih <- hoistMaybe maybeIH
+  (dataFilePath, tFilePath) <- hoistMaybe $ P.lookup ih contactFiles
+  t <- fmap readTorrent $ liftIO $ BSL.readFile tFilePath 
+  torrentFile <- hoistMaybe $ eitherToMaybe t
+  liftIO $ makeBlockLoader (tInfo torrentFile) dataFilePath
+
+
+-- == PROXYING ==
+
+data ProxyDir = Forward | Reverse deriving (Show, Eq)
+
+startProxies btConf onConn = do
+  reverseProxy <- allocAsync $ async $ Proxy.run $ Proxy.Config {
+                 proxyPort = revProxyPort btConf
+               , initHook = P.flip (onConn Reverse)
+               , handshake = revProxy (read localhost :: IP) (pubBitTorrentPort btConf)
+             }
+
+  -- forward socks 
+  forwardProxy <- allocAsync $ async $ Proxy.run $ Proxy.Config {
+                 proxyPort = socksProxyPort btConf
+               , initHook = onConn Forward
+               , handshake = Socks4.serverProtocol
+            }
+  return (reverseProxy, forwardProxy)
+
+-- protocol for a rev proxy
+-- just redirects all connections to a single address
+revProxy ip port = return $ ProxyAction {
+                            command = CONNECT
+                          , remoteAddr = (Right ip, port)
+                          , onConnection = \ _ -> return () 
+                          }
+

@@ -88,7 +88,8 @@ correction can be done. How to get it is a separate issue.
 -}
 
 blockPos pieceLen (index, block)
-  = (pieceLen * index + (fromIntegral $ blockOffset block), fromIntegral $ blockSize block)
+  = (pieceLen * (fromIntegral index)
+      + (fromIntegral $ blockOffset block), fromIntegral $ blockSize block)
 
 makeBlockLoader (SingleFile {..}) filePath = do
   -- TODO: figure out why memory mapping doesn't work
