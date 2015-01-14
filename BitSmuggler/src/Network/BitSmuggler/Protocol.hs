@@ -162,51 +162,58 @@ data PieceHooks = PieceHooks {
 }
 
 
-makeStreams (PieceHooks {..}) getFileFixer
-  = (btStreamHandler $ recvStream getFileFixer
+makeStreams (PieceHooks {..}) getFileFixer = do
+  notifyIH <- newTBQueueIO 1 -- get info hash across to the other stream
+  return $ (btStreamHandler $ recvStream getFileFixer
                                    (liftIO . atomically . writeTQueue recvPiece)
-   , btStreamHandler $ sendStream  (liftIO . atomically . writeTQueue sendGetPiece)
-                                   (liftIO $ atomically $ readTQueue sendPutBack))
-
+                                   (liftIO $ atomically $ readTBQueue notifyIH)
+           , btStreamHandler $ sendStream  (liftIO . atomically . writeTQueue sendGetPiece)
+                                   (liftIO $ atomically $ readTQueue sendPutBack)
+                                   (liftIO . atomically . writeTBQueue notifyIH))
 
 btStreamHandler transform = conduitGet (get :: Get StreamChunk)
                           =$ transform
                           =$ conduitPut (put :: Putter StreamChunk)
 
-
-sendStream putPiece getPiece = do
-  awaitForPiece $ \p -> putPiece (block p) >> fmap (\b -> p {block = b}) getPiece 
-
 type LoadBlock = (Int, Block) -> ByteString 
 
-recvStream :: (Maybe InfoHash -> IO (Maybe LoadBlock)) -> (ByteString -> IO ())
-              -> ConduitM StreamChunk StreamChunk IO ()
-recvStream getBlockLoader putRecv = do
-  upstream <- await
-  case upstream of 
-    Just msg -> do
-      maybeLoader <- liftIO $ getBlockLoader $ hsInfoHash msg
-      case maybeLoader of
-        Just blockLoader -> do
-          leftover msg -- put it back
-          awaitForPiece $ \piece -> do
-            putRecv $ block piece
-            -- TODO: don't fix it if it ain't broken
-            -- pieces that are not tampered with should not undergo fixing
-            return $ fixPiece piece blockLoader
+sendStream putPiece getPiece notifyIH
+  = chunkStream (\hs -> (notifyIH $ hsInfoHash hs) >> loop) loop
+    where
+      loop = awaitForPiece $ \p -> putPiece (block p)
+                                   >> fmap (\b -> p {block = b}) getPiece 
 
-        -- if there is no way to fix the bittorrent stream
-        -- just stream it without pushing received pieces to putRecv
-        Nothing -> DC.yield msg >> awaitForever (\m -> DC.yield m)
-    Nothing -> return ()  
+recvStream :: (InfoHash -> IO (Maybe LoadBlock))
+              -> (ByteString -> IO ()) -> (IO InfoHash)
+              -> ConduitM StreamChunk StreamChunk IO ()
+recvStream getBlockLoader putRecv readIH
+  = chunkStream (loop . hsInfoHash) ((liftIO $ readIH) >>= loop)
+    where
+      loop ih = do
+        maybeFixPiece <- liftIO $ getBlockLoader ih
+        case maybeFixPiece of
+          Nothing -> awaitForever (\m -> DC.yield m) -- just proxy stuff
+          Just loadBlock ->
+            awaitForPiece $ \piece -> do
+                              putRecv $ block piece
+                              -- TODO: don't fix it if it ain't broken
+                               -- pieces that are not tampered with should not be fixed
+                              return $ fixPiece piece loadBlock
 
 fixPiece p@(Piece {..}) loadBlock =
   let goodBlock = loadBlock (index, Block {blockOffset = begin,
                                         blockSize  = BS.length block})
   in p {block = goodBlock}
 
-hsInfoHash (HandShake _ ih _) = Just ih
-hsInfoHash _ = Nothing
+
+chunkStream onHandshake otherwise = do
+  upstream <- await
+  case upstream of
+    Just hs@(HandShake _ _ _) -> leftover hs >> onHandshake hs
+    Just other -> leftover other >> otherwise
+    Nothing -> return ()
+
+hsInfoHash (HandShake _ ih _) = ih
 
 awaitForPiece :: (BT.Message -> IO BT.Message) 
               -> (ConduitM StreamChunk StreamChunk IO ())

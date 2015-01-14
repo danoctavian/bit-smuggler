@@ -167,8 +167,7 @@ genRandBytes seed size
 lacksPieces = (== "") . tPieces
 
 -- file fixing 
-findPieceLoader contactFiles maybeIH = runMaybeT $ do
-  ih <- hoistMaybe maybeIH
+findPieceLoader contactFiles ih = runMaybeT $ do
   (dataFilePath, tFilePath) <- hoistMaybe $ P.lookup ih contactFiles
   t <- fmap readTorrent $ liftIO $ BSL.readFile tFilePath 
   torrentFile <- hoistMaybe $ eitherToMaybe t

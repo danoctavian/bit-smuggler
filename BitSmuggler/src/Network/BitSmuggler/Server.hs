@@ -117,7 +117,7 @@ serverConnInit secretKey stateVar handleConn fileFix direction local remote = do
 
       return conn        
 
-  let streams = (if direction == Reverse then Tup.swap else P.id) $
+  streams <- fmap (if direction == Reverse then Tup.swap else P.id) $
                 makeStreams (pieceHooks conn) fileFix
   return $ DataHooks {incoming = P.fst streams, outgoing = P.snd streams} 
 
