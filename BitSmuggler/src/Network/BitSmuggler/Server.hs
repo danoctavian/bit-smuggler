@@ -7,7 +7,7 @@ import System.Log.Logger
 import Data.Word
 import Control.Monad.Trans.Resource
 import qualified Data.ByteString.Lazy as BSL
-import Data.ByteString
+import Data.ByteString as BS
 import Control.Monad.IO.Class
 import Data.IP
 import Control.Monad
@@ -43,6 +43,7 @@ run single torrent client - running many potentially blows the cover
 -}
 
 logger = "BitSmuggler.Server"
+
 
 data ServerConfig = ServerConfig {
     serverSecretKey :: Key
@@ -106,7 +107,8 @@ serverConnInit secretKey stateVar handleConn fileFix direction local remote = do
     Just conn -> return conn
     Nothing -> do
       -- rip it a new one
-      [recv, sendGet, sendPut] <- replicateM 3 (liftIO $ newTQueueIO)
+      [sendGet, sendPut] <- replicateM 2 (liftIO $ newEmptyTMVarIO)
+      recv <- newTQueueIO
       let pieceHs = PieceHooks recv sendGet sendPut
       handleTask <- async $ runResourceT $ do
          register $ modActives (Map.delete remote)  stateVar
@@ -139,7 +141,7 @@ handleConnection (PieceHooks {..}) secretKey userHandle = do
           $$ queueSink userRecv
 
   -- wait for handshake
-  (ConnRequest payload) <- liftIO $ atomically $ readTQueue userRecv
+  (ConnRequest payload maybeToken) <- liftIO $ atomically $ readTQueue userRecv
 
   let crypto = makeServerEncryption secretKey payload
   cprg <- liftIO $ makeCPRG
@@ -147,12 +149,12 @@ handleConnection (PieceHooks {..}) secretKey userHandle = do
   -- launch send pipe
   allocLinkedAsync $ async
          $ (tryQueueSource userSend) =$ sendPipe packetSize sendARQ (encrypter crypto cprg) 
-                $$ outgoingSink (liftIO $ atomically $ readTQueue sendGetPiece)
-                            (\p -> liftIO $ atomically $ writeTQueue sendPutBack p)
+                $$ outgoingSink (liftIO $ atomically $ takeTMVar sendGetPiece)
+                            (\p -> liftIO $ atomically $ putTMVar sendPutBack p)
 
   -- reply to handshake 
   -- accept. we don't discriminate.. for now
-  liftIO $ atomically $ writeTQueue userSend AcceptConn  
+  liftIO $ atomically $ writeTQueue userSend $ AcceptConn BS.empty
 
   -- run conn handler
   liftIO $ userHandle $ ConnData {

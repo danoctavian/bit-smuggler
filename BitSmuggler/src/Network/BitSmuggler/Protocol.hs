@@ -15,6 +15,7 @@ import Control.Monad
 import Control.Applicative hiding (empty)
 import Control.Exception
 import Control.Concurrent.STM.TQueue
+import Control.Concurrent.STM.TMVar
 import Control.Concurrent.STM
 import Control.Monad.IO.Class
 import Control.Concurrent.Async
@@ -123,23 +124,29 @@ pad bs targetLen padding = BS.concat [bs, BS.replicate (targetLen - BS.length bs
 
 -- messages 
 
-data ServerMessage = ServerData ByteString | AcceptConn | RejectConn
+-- a token given by the server to the client
+-- for the client to recover its session
+type SessionToken = ByteString
+tokenLen = 64 -- bytes
 
-data ClientMessage = ClientData ByteString | ConnRequest ByteString -- the pub key
+data ServerMessage = ServerData ByteString | AcceptConn SessionToken | RejectConn
 
+data ClientMessage = ClientData ByteString
+                   | ConnRequest ByteString (Maybe SessionToken)
 -- TODO: replace the following with automatic derivation of Serialize
 instance Serialize ServerMessage where
-  put AcceptConn = putWord8 0
+  put (AcceptConn token) = putWord8 0 >> putByteString token
   put RejectConn = putWord8 1
   put (ServerData bs) = putWord8 2 >> putByteString bs
 
-  get = (byte 0 *> return AcceptConn) <|> (byte 1 *> return RejectConn)
+  get =     (byte 0 *> (AcceptConn <$> getBytes tokenLen))
+        <|> (byte 1 *> return RejectConn)
         <|> (byte 2 *> (ServerData <$> getRemaining))
 
 instance Serialize ClientMessage where
-  put (ConnRequest k) = putWord8 0 >> put k
+  put (ConnRequest k maybeToken) = putWord8 0 >> put k >> put maybeToken
   put (ClientData bs) = putWord8 1 >> putByteString bs
-  get = (byte 0 *> (ConnRequest <$> getRemaining))
+  get = (byte 0 *> (ConnRequest <$> getBytes Crypto.keySize <*> get))
         <|> (byte 1 *> (ClientData <$> getRemaining))
 
 -- encodes a custom serializable msg
@@ -157,19 +164,21 @@ getMsg = byte msgHead >> getWord32le >>= getBytes . fromIntegral
 
 data PieceHooks = PieceHooks {
     recvPiece :: TQueue ByteString
-  , sendGetPiece :: TQueue ByteString
-  , sendPutBack :: TQueue ByteString
+  , sendGetPiece :: TMVar ByteString
+  , sendPutBack :: TMVar ByteString
 }
 
 
 makeStreams (PieceHooks {..}) getFileFixer = do
-  notifyIH <- newTBQueueIO 1 -- get info hash across to the other stream
+  -- a tmvar used to notify the recv thread of the infohash of the stream
+  -- in the case in which the send thread learns about it
+  notifyIH <- newEmptyTMVarIO 
   return $ (btStreamHandler $ recvStream getFileFixer
                                    (liftIO . atomically . writeTQueue recvPiece)
-                                   (liftIO $ atomically $ readTBQueue notifyIH)
-           , btStreamHandler $ sendStream  (liftIO . atomically . writeTQueue sendGetPiece)
-                                   (liftIO $ atomically $ readTQueue sendPutBack)
-                                   (liftIO . atomically . writeTBQueue notifyIH))
+                                   (liftIO $ atomically $ takeTMVar notifyIH)
+           , btStreamHandler $ sendStream  (liftIO . atomically . putTMVar sendGetPiece)
+                                   (liftIO $ atomically $ takeTMVar sendPutBack)
+                                   (liftIO . atomically . putTMVar notifyIH))
 
 btStreamHandler transform = conduitGet (get :: Get StreamChunk)
                           =$ transform
