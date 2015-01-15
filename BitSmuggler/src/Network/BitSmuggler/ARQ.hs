@@ -22,7 +22,13 @@ type SeqNum = Word32
 
 headerLen = sizeOf (def :: AckNum) + sizeOf (def :: SeqNum)
 
+
+data ARQ = ARQ {
+    sendARQ :: ARQPipe (Maybe ByteString)
+  , recvARQ :: ARQPipe ByteString
+}
+
 type ARQPipe a = Conduit a IO a
 
-noARQ :: (ARQPipe ByteString, ARQPipe (Maybe ByteString))
-noARQ = (DC.map id, DC.map id)
+noARQ :: ARQ 
+noARQ = ARQ (DC.map id) (DC.map id)

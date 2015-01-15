@@ -11,12 +11,15 @@ import Data.ByteString as BS
 import Control.Monad.IO.Class
 import Data.IP
 import Control.Monad
+import Control.Exception
+import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TVar
 import Control.Concurrent.STM.TQueue
 import Data.Time.Clock
 import Data.Conduit as DC
+import Data.Conduit.List as DC
 import Data.Serialize as DS
 import Data.LargeWord
 import Crypto.Random
@@ -54,7 +57,7 @@ data ServerConfig = ServerConfig {
 }
 
 data ServerState = ServerState {
-    activeConns :: Map (IP, PortNum) Connection
+    activeConns :: Map SessionToken Connection
 }
 
 data Connection = Conn {
@@ -101,26 +104,14 @@ killConn = cancel . handlerTask
 -- TODO: check this out https://www.youtube.com/watch?v=uMK0prafzw0
 serverConnInit secretKey stateVar handleConn fileFix direction local remote = do
   -- check if connection to this remote address is still active
-  maybeConn <- atomically $ fmap (Map.lookup remote . activeConns) $ readTVar stateVar
+  --maybeConn <- atomically $ fmap (Map.lookup remote . activeConns) $ readTVar stateVar
+  pieceHs <- makePieceHooks
 
-  conn <- case maybeConn of 
-    Just conn -> return conn
-    Nothing -> do
-      -- rip it a new one
-      [sendGet, sendPut] <- replicateM 2 (liftIO $ newEmptyTMVarIO)
-      recv <- newTQueueIO
-      let pieceHs = PieceHooks recv sendGet sendPut
-      handleTask <- async $ runResourceT $ do
-         register $ modActives (Map.delete remote)  stateVar
-         handleConnection pieceHs secretKey handleConn
 
-      let conn = Conn Nothing pieceHs handleTask
-      modActives (Map.insert remote conn) stateVar
-
-      return conn        
+  forkIO $ handleConnection stateVar pieceHs secretKey handleConn
 
   streams <- fmap (if direction == Reverse then Tup.swap else P.id) $
-                makeStreams (pieceHooks conn) fileFix
+                makeStreams pieceHs fileFix
   return $ DataHooks {incoming = P.fst streams, outgoing = P.snd streams} 
 
 
@@ -128,33 +119,62 @@ modActives f s = atomically $ modifyTVar s
   (\s -> s {activeConns = f $ activeConns s})
 
 
-handleConnection (PieceHooks {..}) secretKey userHandle = do
-  let (recvARQ, sendARQ) = noARQ -- there's no ARQ right now
+handleConnection stateVar pieceHooks secretKey userHandle = do
+  -- classify connection 
+
+  let noarq = noARQ -- there's no ARQ right now
   let packetSize = blockSize - Crypto.msgHeaderLen
-  
+  [fstClientMessage] <-
+    runConduit $ (queueSource $ recvPiece pieceHooks)
+               =$ (recvPipe (recvARQ noarq) $ handshakeDecrypt secretKey) =$ DC.take 1
+  case fstClientMessage of
+    (ConnRequest keyRepr Nothing) -> do
+      -- client is requesting the creation of a new session
+      let crypto = makeServerEncryption secretKey keyRepr
+      initCprg <- liftIO $ makeCPRG
+      let (token, cprg) = cprgGenerate tokenLen initCprg
+      let encrypt = encrypter crypto cprg
+
+      task <- async $ runResourceT $ do
+         register $ modActives (Map.delete token) stateVar
+         runConnection packetSize pieceHooks noarq
+                       encrypt (decrypt crypto) token userHandle
+      modActives (Map.insert token (Conn Nothing pieceHooks task)) stateVar
+      return ()     
+    (ConnRequest keyRepr (Just token)) -> do
+      -- client is requesting session recovery using token
+      maybeConn <- atomically $ fmap (Map.lookup token . activeConns) $ readTVar stateVar
+      case maybeConn of
+        Just conn -> do
+          -- TODO: implement session loading
+          throwIO UnsupportedFeature 
+        Nothing -> do
+          errorM logger "session token not found"
+          throwIO ClientProtocolError
+    other -> do
+        errorM logger "The first client message should always be a conn request"
+        throwIO ClientProtocolError
+  -- store conn  
+  return ()
+
+runConnection packetSize (PieceHooks {..}) arq encrypter decrypt token userHandle = do
   userSend <- liftIO $ (newTQueueIO :: IO (TQueue ServerMessage))
   userRecv <- liftIO $ (newTQueueIO :: IO (TQueue ClientMessage))
 
   -- launch receive pipe
   allocLinkedAsync $ async
-          $ (queueSource recvPiece) =$ (recvPipe recvARQ $ serverDecrypter secretKey)
+          $ (queueSource recvPiece) =$ (recvPipe (recvARQ arq) decrypt)
           $$ queueSink userRecv
-
-  -- wait for handshake
-  (ConnRequest payload maybeToken) <- liftIO $ atomically $ readTQueue userRecv
-
-  let crypto = makeServerEncryption secretKey payload
-  cprg <- liftIO $ makeCPRG
 
   -- launch send pipe
   allocLinkedAsync $ async
-         $ (tryQueueSource userSend) =$ sendPipe packetSize sendARQ (encrypter crypto cprg) 
+         $ (tryQueueSource userSend) =$ sendPipe packetSize (sendARQ arq) encrypter
                 $$ outgoingSink (liftIO $ atomically $ takeTMVar sendGetPiece)
                             (\p -> liftIO $ atomically $ putTMVar sendPutBack p)
 
   -- reply to handshake 
   -- accept. we don't discriminate.. for now
-  liftIO $ atomically $ writeTQueue userSend $ AcceptConn BS.empty
+  liftIO $ atomically $ writeTQueue userSend $ AcceptConn token
 
   -- run conn handler
   liftIO $ userHandle $ ConnData {
@@ -164,13 +184,8 @@ handleConnection (PieceHooks {..}) secretKey userHandle = do
 
 unwrapData (ClientData d) = d
 
-serverDecrypter sk = Decrypter {
-  runD = \bs -> do
-         (cryptoOps, msg) <- tryReadHandshake sk bs
-         let applyDecrypt = Decrypter {runD = \bs ->
-                                        fmap (, applyDecrypt) $ decrypt cryptoOps bs}    
-         return (msg, applyDecrypt)
-} 
+ 
+handshakeDecrypt sk bs = fmap P.snd $ tryReadHandshake sk $ bs
 
 encrypter ops cprg = Encrypter {
   runE = \bs -> let (bytes, next) = cprgGenerate 16 cprg

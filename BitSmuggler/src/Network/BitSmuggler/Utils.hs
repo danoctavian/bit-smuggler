@@ -55,6 +55,7 @@ import Network.BitTorrent.ClientControl (PortNum, InfoHash)
 
 -- TODO: move this to a more appropriate place
 data BitSmugglerException = UnsupportedFeature | TorrentFileIntegrityFail
+                          | ClientProtocolError
   deriving (Show, Typeable)
 
 instance Exception BitSmugglerException

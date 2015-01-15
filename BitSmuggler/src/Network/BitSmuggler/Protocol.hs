@@ -11,7 +11,7 @@ import Data.Conduit as DC
 import Data.Conduit.List as DC
 import Data.ByteString as BS
 import Data.Word
-import Control.Monad
+import Control.Monad as CM
 import Control.Applicative hiding (empty)
 import Control.Exception
 import Control.Concurrent.STM.TQueue
@@ -56,7 +56,7 @@ padding = 69 -- pad bytes value
 msgHead = 33 -- byte prefixing a a length prefixed message in the stream
 
 recvPipe arq decrypt =
-  decryptPipe decrypt =$ DC.catMaybes =$ arq
+  DC.map decrypt =$ DC.catMaybes =$ arq
   =$ conduitGet (skipWhile (== padding) >> getMsg) =$ conduitGet get
 
 
@@ -79,9 +79,7 @@ data Encrypter = Encrypter {
   runE :: ByteString -> (ByteString, Encrypter)
 }
 
-data Decrypter = Decrypter {
-  runD :: ByteString -> Maybe (ByteString, Decrypter)
-}
+
 
 -- to deal with the fact that the encrypt pipe needs to go
 -- through maybe values
@@ -91,11 +89,6 @@ encryptPipe encrypt = concatMapAccum
   (\mplain encrypt -> case mplain of
            Just plain -> let (cypher, next) = runE encrypt plain in (next, [Just cypher])
            Nothing -> (encrypt, [Nothing])) encrypt
-
-decryptPipe decrypt = concatMapAccum
-  (\cypher decrypt -> case runD decrypt cypher of
-           Just (plain, next) -> (next, [Just plain])
-           Nothing -> (decrypt, [Nothing])) decrypt 
 
 {-
   wait for the bt stream to produce a piece,
@@ -168,6 +161,10 @@ data PieceHooks = PieceHooks {
   , sendPutBack :: TMVar ByteString
 }
 
+makePieceHooks = do
+  [sendGet, sendPut] <- CM.replicateM 2 (liftIO $ newEmptyTMVarIO)
+  recv <- newTQueueIO
+  return $ PieceHooks recv sendGet sendPut
 
 makeStreams (PieceHooks {..}) getFileFixer = do
   -- a tmvar used to notify the recv thread of the infohash of the stream
