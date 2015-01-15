@@ -25,6 +25,7 @@ import Crypto.Random
 import Network.BitSmuggler.Crypto as Crypto
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.BitTorrentParser as BT
+import Network.BitSmuggler.ARQ
 
 {-
 
@@ -120,6 +121,24 @@ isolateAndPad n = forever $ do
   yield $ if (BS.length bytes > 0) then Just $ pad bytes n padding else Nothing
 
 pad bs targetLen padding = BS.concat [bs, BS.replicate (targetLen - BS.length bs) padding]
+
+-- putting it all together
+launchPipes packetSize (PieceHooks {..}) arq encrypter decrypt = do
+  userSend <- liftIO $ (newTQueueIO :: IO (TQueue ServerMessage))
+  userRecv <- liftIO $ (newTQueueIO :: IO (TQueue ClientMessage))
+
+  -- launch receive pipe
+  allocLinkedAsync $ async
+          $ (readSource (liftIO $ read recvPiece)) =$ (recvPipe (recvARQ arq) decrypt)
+          $$ queueSink userRecv
+
+  -- launch send pipe
+  allocLinkedAsync $ async
+         $ (tryQueueSource userSend) =$ sendPipe packetSize (sendARQ arq) encrypter
+                $$ outgoingSink (read sendGetPiece)
+                            (\p -> write sendPutBack p)
+
+  return (userRecv, userSend)
 
 -- messages 
 

@@ -6,6 +6,7 @@ import Control.Monad.Trans.Resource
 import System.Log.Logger
 import Control.Monad.IO.Class
 import Control.Exception
+import Control.Concurrent.Async
 import Control.Concurrent.STM.TQueue
 import System.Random
 import Control.Concurrent.STM
@@ -52,6 +53,7 @@ data ClientStage = FirstConnect | Reconnect SessionToken
 data ClientState = ClientState {
     stage :: ClientStage
   , currentInfoHash :: InfoHash
+  , handlerTask :: Maybe (Async ())
 }
 
 
@@ -86,6 +88,7 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   -- tell client to start working on file 
   return ()
 
+
 clientProxyInit stateVar serverAddress (PieceHooks {..}) (cryptoOps, repr) local remote = do
   if (remote == serverAddress)
   then do
@@ -100,15 +103,21 @@ clientProxyInit stateVar serverAddress (PieceHooks {..}) (cryptoOps, repr) local
                         (encrypter (encryptHandshake (cryptoOps, repr)) cprg)
                    $$ outgoingSink (read sendGetPiece) 
                                    (\p -> write sendPutBack p)
-        
+       
+         
         return ()
 
       Reconnect token -> do
         errorM logger "reconnect not implement at the moment"
         throwIO UnsupportedFeature
     return undefined    
-     
-  else return $ DataHooks {incoming = DC.map P.id, outgoing = DC.map P.id}
+    
+  -- it's some other connection - just proxy data without any 
+  -- parsing or tampering
+  else return $ DataHooks { incoming = DC.map P.id
+                          , outgoing = DC.map P.id
+                          , onDisconnect = return () -- don't do anything
+                        }
 
 
 packetSize = blockSize - Crypto.msgHeaderLen

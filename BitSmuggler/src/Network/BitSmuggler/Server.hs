@@ -108,12 +108,14 @@ serverConnInit secretKey stateVar handleConn fileFix direction local remote = do
   --maybeConn <- atomically $ fmap (Map.lookup remote . activeConns) $ readTVar stateVar
   pieceHs <- makePieceHooks
 
-
   forkIO $ handleConnection stateVar pieceHs secretKey handleConn
 
   streams <- fmap (if direction == Reverse then Tup.swap else P.id) $
                 makeStreams pieceHs fileFix
-  return $ DataHooks {incoming = P.fst streams, outgoing = P.snd streams} 
+  return $ DataHooks { incoming = P.fst streams
+                     , outgoing = P.snd streams
+                     , onDisconnect = return () -- TODO: implement 
+                    } 
 
 
 modActives f s = atomically $ modifyTVar s
@@ -148,6 +150,7 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
       case maybeConn of
         Just conn -> do
           -- TODO: implement session loading
+          errorM logger "session loading not implemented!"
           throwIO UnsupportedFeature 
         Nothing -> do
           errorM logger "session token not found"
@@ -158,21 +161,8 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
   -- store conn  
   return ()
 
-runConnection packetSize (PieceHooks {..}) arq encrypter decrypt token userHandle = do
-  userSend <- liftIO $ (newTQueueIO :: IO (TQueue ServerMessage))
-  userRecv <- liftIO $ (newTQueueIO :: IO (TQueue ClientMessage))
-
-  -- launch receive pipe
-  allocLinkedAsync $ async
-          $ (readSource (liftIO $ read recvPiece)) =$ (recvPipe (recvARQ arq) decrypt)
-          $$ queueSink userRecv
-
-  -- launch send pipe
-  allocLinkedAsync $ async
-         $ (tryQueueSource userSend) =$ sendPipe packetSize (sendARQ arq) encrypter
-                $$ outgoingSink (read sendGetPiece)
-                            (\p -> write sendPutBack p)
-
+runConnection packetSize pieceHooks arq encrypter decrypt token userHandle = do
+  (userRecv, userSend) <- launchPipes packetSize pieceHooks arq encrypter decrypt
   -- reply to handshake 
   -- accept. we don't discriminate.. for now
   liftIO $ atomically $ writeTQueue userSend $ AcceptConn token
