@@ -63,11 +63,12 @@ data EncryptedMessage = EncryptedMessage ByteString AuthTag ByteString
 type Message = ByteString
 
 -- encrypt functions require 128 random bits
-type Encrypt = Word128 -> Message -> ByteString 
+type Encrypt = Entropy -> Message -> ByteString 
 type Decrypt = ByteString -> Maybe Message
 data CryptoOps = CryptoOps {encrypt :: Encrypt, decrypt :: Decrypt}
 
 type Key = Word256
+type Entropy = Word128
 
 keySize = 32
 ivLen = 16
@@ -76,18 +77,19 @@ msgHeaderLen :: Int
 msgHeaderLen = ivLen + authTagLen
 -- TODO: implement the following
 
-
 -- derive client message to server (its pub key) and the encrypt/decrypt functions
 -- the runtime of this function does not have an upper bound - 
 -- keys need to be tried until 1 is found that satisfies elligator requirements
-makeClientEncryption ::  CPRG g => Key -> g -> CryptoOps
+makeClientEncryption ::  CPRG g => Key -> g -> (CryptoOps, ByteString)
 makeClientEncryption serverPkWord gen
-  = makeCryptoOps privKey (pubFromWord256 serverPkWord)
+  = (makeCryptoOps privKey (pubFromWord256 serverPkWord), repr)
     where
       (privKey, (pubKey, repr)) = fromJust $ P.foldl mplus Nothing
            $ P.map (\rands -> let key = fromBytes rands in fmap (key,) $ elligatorInv key)
            $ L.unfoldr (\g -> Just $ cprgGenerate keySize g) gen
-      
+
+encryptHandshake :: (CryptoOps, ByteString) -> Entropy -> Message -> ByteString
+encryptHandshake (ops, repr) iv msg = DS.encode $ HandshakeMessage repr (encrypt ops iv msg)
 
 -- derive server encrypt/decrypt and the handshake payload
 -- from client handshake message and server private key

@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards, TupleSections #-}
 module Network.BitSmuggler.Server where
 
-import Prelude as P
+import Prelude as P hiding (read)
 import Network.BitSmuggler.Crypto as Crypto
 import System.Log.Logger
 import Data.Word
@@ -88,6 +88,7 @@ listen config handle = runResourceT $ do
 
   (reverseProxy, forwardProxy) <- startProxies (btClientConfig config) onConn
   -- tell client to use the files
+  -- TODO: implement
 
   -- wait for it...
   liftIO $ waitBoth (snd reverseProxy) (snd forwardProxy)
@@ -125,7 +126,7 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
   let noarq = noARQ -- there's no ARQ right now
   let packetSize = blockSize - Crypto.msgHeaderLen
   [fstClientMessage] <-
-    runConduit $ (queueSource $ recvPiece pieceHooks)
+    runConduit $ (readSource (liftIO $ read $ recvPiece pieceHooks))
                =$ (recvPipe (recvARQ noarq) $ handshakeDecrypt secretKey) =$ DC.take 1
   case fstClientMessage of
     (ConnRequest keyRepr Nothing) -> do
@@ -133,12 +134,12 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
       let crypto = makeServerEncryption secretKey keyRepr
       initCprg <- liftIO $ makeCPRG
       let (token, cprg) = cprgGenerate tokenLen initCprg
-      let encrypt = encrypter crypto cprg
+      let serverEncrypt = encrypter (encrypt crypto) cprg
 
       task <- async $ runResourceT $ do
          register $ modActives (Map.delete token) stateVar
          runConnection packetSize pieceHooks noarq
-                       encrypt (decrypt crypto) token userHandle
+                       serverEncrypt (decrypt crypto) token userHandle
       modActives (Map.insert token (Conn Nothing pieceHooks task)) stateVar
       return ()     
     (ConnRequest keyRepr (Just token)) -> do
@@ -163,14 +164,14 @@ runConnection packetSize (PieceHooks {..}) arq encrypter decrypt token userHandl
 
   -- launch receive pipe
   allocLinkedAsync $ async
-          $ (queueSource recvPiece) =$ (recvPipe (recvARQ arq) decrypt)
+          $ (readSource (liftIO $ read recvPiece)) =$ (recvPipe (recvARQ arq) decrypt)
           $$ queueSink userRecv
 
   -- launch send pipe
   allocLinkedAsync $ async
          $ (tryQueueSource userSend) =$ sendPipe packetSize (sendARQ arq) encrypter
-                $$ outgoingSink (liftIO $ atomically $ takeTMVar sendGetPiece)
-                            (\p -> liftIO $ atomically $ putTMVar sendPutBack p)
+                $$ outgoingSink (read sendGetPiece)
+                            (\p -> write sendPutBack p)
 
   -- reply to handshake 
   -- accept. we don't discriminate.. for now
@@ -186,11 +187,6 @@ unwrapData (ClientData d) = d
 
  
 handshakeDecrypt sk bs = fmap P.snd $ tryReadHandshake sk $ bs
-
-encrypter ops cprg = Encrypter {
-  runE = \bs -> let (bytes, next) = cprgGenerate 16 cprg
-          in (encrypt ops (fromRight $ DS.decode bytes :: Word128) bs, encrypter ops next)
-}
 
 revProxy ip port = return $ ProxyAction {
                             command = CONNECT

@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase, RecordWildCards #-}
 module Network.BitSmuggler.Protocol where
 
-import Prelude as P
+import Prelude as P hiding (read)
 import Data.Maybe
 import Data.Serialize as DS
 import Data.Serialize.Put
@@ -12,6 +12,7 @@ import Data.Conduit.List as DC
 import Data.ByteString as BS
 import Data.Word
 import Control.Monad as CM
+import Control.Monad.Trans
 import Control.Applicative hiding (empty)
 import Control.Exception
 import Control.Concurrent.STM.TQueue
@@ -19,6 +20,7 @@ import Control.Concurrent.STM.TMVar
 import Control.Concurrent.STM
 import Control.Monad.IO.Class
 import Control.Concurrent.Async
+import Crypto.Random
 
 import Network.BitSmuggler.Crypto as Crypto
 import Network.BitSmuggler.Utils
@@ -67,8 +69,8 @@ tryQueueSource q = forever $ do
   item <- liftIO $ atomically $ tryReadTQueue q
   DC.yield item
 
-queueSource q = forever $ do
-  item <- liftIO $ atomically $ readTQueue q
+readSource read = forever $ do
+  item <- read
   DC.yield item
 
 queueSink q = awaitForever (liftIO . atomically . writeTQueue q)
@@ -79,7 +81,11 @@ data Encrypter = Encrypter {
   runE :: ByteString -> (ByteString, Encrypter)
 }
 
-
+-- make an encrypter from an encryption function and a crpg
+encrypter encrypt cprg = Encrypter {
+  runE = \bs -> let (bytes, next) = cprgGenerate 16 cprg
+          in (encrypt (fromRight $ DS.decode bytes :: Entropy) bs, encrypter encrypt next)
+}
 
 -- to deal with the fact that the encrypt pipe needs to go
 -- through maybe values
@@ -97,11 +103,11 @@ encryptPipe encrypt = concatMapAccum
 -}
 outgoingSink getPiece putBack = do
   -- get a piece as it's about to leave the local bt client
-  piece <- getPiece
+  piece <- lift getPiece
   upstream <- await 
   case upstream of
     (Just maybePayload) -> do
-      putBack $ case maybePayload of
+      lift $ putBack $ case maybePayload of
         (Just payload) -> payload 
         Nothing -> piece  -- move on, nothing to change
       outgoingSink getPiece putBack
@@ -156,26 +162,34 @@ getMsg = byte msgHead >> getWord32le >>= getBytes . fromIntegral
 -- bittorrent stream handlers
 
 data PieceHooks = PieceHooks {
-    recvPiece :: TQueue ByteString
-  , sendGetPiece :: TMVar ByteString
-  , sendPutBack :: TMVar ByteString
+    recvPiece :: SharedMem ByteString
+  , sendGetPiece :: SharedMem ByteString
+  , sendPutBack :: SharedMem ByteString
 }
+
+-- a wrapper for shared memory (can be tvar, or tbqueue or whatever)
+data SharedMem a = SharedMem {read :: IO a, write :: a -> IO ()}
+
+stmShared r w var = SharedMem {read = atomically $ r var, write = atomically . (w var)}
 
 makePieceHooks = do
   [sendGet, sendPut] <- CM.replicateM 2 (liftIO $ newEmptyTMVarIO)
   recv <- newTQueueIO
-  return $ PieceHooks recv sendGet sendPut
+  return $ PieceHooks (stmShared readTQueue writeTQueue recv)
+                      (stmShared takeTMVar putTMVar sendGet)
+                      (stmShared takeTMVar putTMVar sendPut)
 
 makeStreams (PieceHooks {..}) getFileFixer = do
   -- a tmvar used to notify the recv thread of the infohash of the stream
   -- in the case in which the send thread learns about it
   notifyIH <- newEmptyTMVarIO 
+  let sharedIH = stmShared takeTMVar putTMVar notifyIH
   return $ (btStreamHandler $ recvStream getFileFixer
-                                   (liftIO . atomically . writeTQueue recvPiece)
-                                   (liftIO $ atomically $ takeTMVar notifyIH)
-           , btStreamHandler $ sendStream  (liftIO . atomically . putTMVar sendGetPiece)
-                                   (liftIO $ atomically $ takeTMVar sendPutBack)
-                                   (liftIO . atomically . putTMVar notifyIH))
+                                   (write recvPiece)
+                                   (read sharedIH)
+           , btStreamHandler $ sendStream (liftIO . (write sendGetPiece))
+                                   (liftIO $ read sendPutBack)
+                                   (liftIO . (write sharedIH)))
 
 btStreamHandler transform = conduitGet (get :: Get StreamChunk)
                           =$ transform
