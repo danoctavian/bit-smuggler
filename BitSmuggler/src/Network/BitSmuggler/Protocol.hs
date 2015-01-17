@@ -66,15 +66,32 @@ recvPipe arq decrypt =
 sendPipe packetSize arq encrypt =
   DC.map (fmap $ encodeMsg) =$ isolateAndPad packetSize =$ arq =$ (encryptPipe encrypt)
 
-tryQueueSource q = forever $ do
-  item <- liftIO $ atomically $ tryReadTQueue q
+
+{-
+ read data and control messages with priority 
+ given to control messages;
+ pushes Nothing upstream if no queue has anything
+
+ the data queue is read only if the allowData flag is set
+ (mvar is available)
+-}
+msgSource controlSend userSend allowData = forever $ do
+  item <- liftIO $ atomically $
+    (fmap Just $
+       ((fmap Control $ readTQueue controlSend) `orElse`
+        (fmap Data $ readTMVar allowData >> readTQueue userSend)))
+    `orElse` return Nothing
   DC.yield item
 
 readSource read = forever $ do
   item <- read
   DC.yield item
 
-queueSink q = awaitForever (liftIO . atomically . writeTQueue q)
+-- filter messages into control and data
+msgSink controlQ dataQ
+  = awaitForever $ \case 
+      (Data d) -> liftIO . atomically .writeTQueue dataQ $ d
+      (Control c) -> liftIO . atomically . writeTQueue controlQ $ c
 
 -- encryption
 
@@ -115,6 +132,12 @@ outgoingSink getPiece putBack = do
     Nothing -> return ()
 
 
+data Pipe r s = Pipe {
+    pipeRecv :: TQueue r 
+  , pipeSend :: TQueue s 
+}
+
+
 isolateAndPad :: Monad m => Int -> Conduit (Maybe BS.ByteString) m (Maybe BS.ByteString)
 isolateAndPad n = forever $ do
   bytes <- fmap BS.concat $ isolateWhileSmth n =$ DC.consume
@@ -123,22 +146,22 @@ isolateAndPad n = forever $ do
 pad bs targetLen padding = BS.concat [bs, BS.replicate (targetLen - BS.length bs) padding]
 
 -- putting it all together
-launchPipes packetSize (PieceHooks {..}) arq encrypter decrypt = do
-  userSend <- liftIO $ (newTQueueIO :: IO (TQueue ServerMessage))
-  userRecv <- liftIO $ (newTQueueIO :: IO (TQueue ClientMessage))
+launchPipes packetSize (PieceHooks {..}) arq encrypter decrypt control allowData = do
+  userSend <- liftIO $ (newTQueueIO :: IO (TQueue ByteString))
+  userRecv <- liftIO $ (newTQueueIO :: IO (TQueue ByteString))
 
   -- launch receive pipe
   allocLinkedAsync $ async
           $ (readSource (liftIO $ read recvPiece)) =$ (recvPipe (recvARQ arq) decrypt)
-          $$ queueSink userRecv
+          $$ msgSink (pipeRecv control) userRecv
 
   -- launch send pipe
   allocLinkedAsync $ async
-         $ (tryQueueSource userSend) =$ sendPipe packetSize (sendARQ arq) encrypter
-                $$ outgoingSink (read sendGetPiece)
-                            (\p -> write sendPutBack p)
+         $ (msgSource (pipeSend control) userSend allowData)
+         =$ sendPipe packetSize (sendARQ arq) encrypter
+         $$ outgoingSink (read sendGetPiece) (\p -> write sendPutBack p)
 
-  return (userRecv, userSend)
+  return $ Pipe userRecv userSend
 
 -- messages 
 
@@ -147,25 +170,35 @@ launchPipes packetSize (PieceHooks {..}) arq encrypter decrypt = do
 type SessionToken = ByteString
 tokenLen = 64 -- bytes
 
-data ServerMessage = ServerData ByteString | AcceptConn SessionToken | RejectConn
+-- the messages sent on the wire in their most general form
+data WireMessage a = Data ByteString | Control a
 
-data ClientMessage = ClientData ByteString
-                   | ConnRequest ByteString (Maybe SessionToken)
+data ServerMessage = AcceptConn SessionToken | RejectConn
+
+data ClientMessage = ConnRequest ByteString (Maybe SessionToken)
+
 -- TODO: replace the following with automatic derivation of Serialize
 instance Serialize ServerMessage where
   put (AcceptConn token) = putWord8 0 >> putByteString token
   put RejectConn = putWord8 1
-  put (ServerData bs) = putWord8 2 >> putByteString bs
 
   get =     (byte 0 *> (AcceptConn <$> getBytes tokenLen))
         <|> (byte 1 *> return RejectConn)
-        <|> (byte 2 *> (ServerData <$> getRemaining))
+
+
 
 instance Serialize ClientMessage where
   put (ConnRequest k maybeToken) = putWord8 0 >> put k >> put maybeToken
-  put (ClientData bs) = putWord8 1 >> putByteString bs
   get = (byte 0 *> (ConnRequest <$> getBytes Crypto.keySize <*> get))
-        <|> (byte 1 *> (ClientData <$> getRemaining))
+
+
+instance (Serialize a) => Serialize (WireMessage a) where
+  put (Data bs) = putWord8 0 >> putByteString bs
+  put (Control m) = putWord8 1 >> put m
+  get =   (byte 0 *> (Data <$> getRemaining))
+      <|> (byte 1 *> (Control <$> get)) 
+
+
 
 -- encodes a custom serializable msg
 encodeMsg :: Serialize a => a -> ByteString

@@ -54,6 +54,8 @@ data ClientState = ClientState {
     stage :: ClientStage
   , currentInfoHash :: InfoHash
   , handlerTask :: Maybe (Async ())
+
+  , pieceProxyTask :: Maybe (Async ())
 }
 
 

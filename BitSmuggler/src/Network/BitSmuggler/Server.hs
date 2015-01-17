@@ -62,8 +62,10 @@ data ServerState = ServerState {
 
 data Connection = Conn {
     onHoldSince :: Maybe UTCTime
-  , pieceHooks :: PieceHooks
   , handlerTask :: Async ()
+  , pieceHooks :: PieceHooks
+  , controlPipe :: Pipe ClientMessage ServerMessage
+  , allowData :: TMVar ()
 }
 
 
@@ -138,11 +140,20 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
       let (token, cprg) = cprgGenerate tokenLen initCprg
       let serverEncrypt = encrypter (encrypt crypto) cprg
 
+      -- control messages   
+      controlSend <-liftIO $ (newTQueueIO :: IO (TQueue ServerMessage))
+      controlRecv <- liftIO $ (newTQueueIO :: IO (TQueue ClientMessage))
+
+      let controlPipe = Pipe controlRecv controlSend
+      allowData <- liftIO $ newEmptyTMVarIO
+
       task <- async $ runResourceT $ do
          register $ modActives (Map.delete token) stateVar
          runConnection packetSize pieceHooks noarq
-                       serverEncrypt (decrypt crypto) token userHandle
-      modActives (Map.insert token (Conn Nothing pieceHooks task)) stateVar
+                       serverEncrypt (decrypt crypto) token
+                       userHandle controlPipe allowData
+      modActives (Map.insert token (Conn Nothing task pieceHooks controlPipe allowData))
+                 stateVar
       return ()     
     (ConnRequest keyRepr (Just token)) -> do
       -- client is requesting session recovery using token
@@ -155,25 +166,27 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
         Nothing -> do
           errorM logger "session token not found"
           throwIO ClientProtocolError
-    other -> do
+    _ -> do
         errorM logger "The first client message should always be a conn request"
         throwIO ClientProtocolError
   -- store conn  
   return ()
 
-runConnection packetSize pieceHooks arq encrypter decrypt token userHandle = do
-  (userRecv, userSend) <- launchPipes packetSize pieceHooks arq encrypter decrypt
+runConnection
+  packetSize pieceHooks arq encrypter decrypt token userHandle control allowData = do
+  user <- launchPipes packetSize pieceHooks arq encrypter decrypt control allowData
   -- reply to handshake 
   -- accept. we don't discriminate.. for now
-  liftIO $ atomically $ writeTQueue userSend $ AcceptConn token
+  liftIO $ atomically $ writeTQueue (pipeSend control) $ AcceptConn token
+
+  -- allowing data to flow
+  liftIO $ atomically $ putTMVar allowData () 
 
   -- run conn handler
   liftIO $ userHandle $ ConnData {
-                          connSend = atomically . writeTQueue userSend . ServerData
-                        , connRecv = fmap unwrapData $ atomically $ readTQueue userRecv}
+                          connSend = atomically . writeTQueue (pipeSend user)
+                        , connRecv = atomically $ readTQueue (pipeRecv user) }
   return ()
-
-unwrapData (ClientData d) = d
 
  
 handshakeDecrypt sk bs = fmap P.snd $ tryReadHandshake sk $ bs
