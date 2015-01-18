@@ -63,9 +63,7 @@ data ServerState = ServerState {
 data Connection = Conn {
     onHoldSince :: Maybe UTCTime
   , handlerTask :: Async ()
-  , pieceHooks :: PieceHooks
-  , controlPipe :: Pipe ClientMessage ServerMessage
-  , allowData :: TMVar ()
+  , dataPipes :: DataPipes ClientMessage ServerMessage
 }
 
 
@@ -107,7 +105,7 @@ killConn = cancel . handlerTask
 -- TODO: check this out https://www.youtube.com/watch?v=uMK0prafzw0
 serverConnInit secretKey stateVar handleConn fileFix direction local remote = do
   -- check if connection to this remote address is still active
-  --maybeConn <- atomically $ fmap (Map.lookup remote . activeConns) $ readTVar stateVar
+  --maybeConn <- atomically $ fmap (Map.lookup remote _. activeConns) $ readTVar stateVar
   pieceHs <- makePieceHooks
 
   forkIO $ handleConnection stateVar pieceHs secretKey handleConn
@@ -139,22 +137,26 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
       initCprg <- liftIO $ makeCPRG
       let (token, cprg) = cprgGenerate tokenLen initCprg
       let serverEncrypt = encrypter (encrypt crypto) cprg
-
+      
       -- control messages   
       controlSend <-liftIO $ (newTQueueIO :: IO (TQueue ServerMessage))
       controlRecv <- liftIO $ (newTQueueIO :: IO (TQueue ClientMessage))
-
       let controlPipe = Pipe controlRecv controlSend
-      allowData <- liftIO $ newEmptyTMVarIO
+      dataGate <- liftIO $ newGate 
+      let dataPipes = DataPipes controlPipe pieceHooks dataGate
 
       task <- async $ runResourceT $ do
+         -- schedule removal when this thread finishes
          register $ modActives (Map.delete token) stateVar
-         runConnection packetSize pieceHooks noarq
+
+         runConnection packetSize noarq
                        serverEncrypt (decrypt crypto) token
-                       userHandle controlPipe allowData
-      modActives (Map.insert token (Conn Nothing task pieceHooks controlPipe allowData))
+                       userHandle dataPipes
+
+      modActives (Map.insert token (Conn Nothing task dataPipes))
                  stateVar
       return ()     
+
     (ConnRequest keyRepr (Just token)) -> do
       -- client is requesting session recovery using token
       maybeConn <- atomically $ fmap (Map.lookup token . activeConns) $ readTVar stateVar
@@ -172,15 +174,14 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
   -- store conn  
   return ()
 
-runConnection
-  packetSize pieceHooks arq encrypter decrypt token userHandle control allowData = do
-  user <- launchPipes packetSize pieceHooks arq encrypter decrypt control allowData
+runConnection packetSize arq encrypter decrypt token userHandle ps@(DataPipes {..}) = do
+  user <- launchPipes packetSize arq encrypter decrypt ps
   -- reply to handshake 
   -- accept. we don't discriminate.. for now
-  liftIO $ atomically $ writeTQueue (pipeSend control) $ AcceptConn token
+  liftIO $ atomically $ writeTQueue (pipeSend controlPipe) $ AcceptConn token
 
   -- allowing data to flow
-  liftIO $ atomically $ putTMVar allowData () 
+  liftIO $ atomically $ openGate dataGate
 
   -- run conn handler
   liftIO $ userHandle $ ConnData {
@@ -190,10 +191,4 @@ runConnection
 
  
 handshakeDecrypt sk bs = fmap P.snd $ tryReadHandshake sk $ bs
-
-revProxy ip port = return $ ProxyAction {
-                            command = CONNECT
-                          , remoteAddr = (Right ip, port)
-                          , onConnection = \ _ -> return () 
-                          }
 

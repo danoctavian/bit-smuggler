@@ -54,21 +54,15 @@ data ClientState = ClientState {
     stage :: ClientStage
   , currentInfoHash :: InfoHash
   , handlerTask :: Maybe (Async ())
-
-  , pieceProxyTask :: Maybe (Async ())
 }
 
 
 clientConnect :: ClientConfig -> (ConnData -> IO ()) -> IO ()
 clientConnect (ClientConfig {..}) handle = runResourceT $ do
 
-  userSend <- liftIO $ (newTQueueIO :: IO (TQueue ServerMessage))
-  userRecv <- liftIO $ (newTQueueIO :: IO (TQueue ClientMessage))
-
   liftIO $ debugM logger "starting client "
 
   -- start torrent client (with config)
-
   (btProc, btClientConn) <- setupBTClient $ btClientConfig
 
   -- setup the FILE on which the client is working
@@ -106,7 +100,6 @@ clientProxyInit stateVar serverAddress (PieceHooks {..}) (cryptoOps, repr) local
                    $$ outgoingSink (read sendGetPiece) 
                                    (\p -> write sendPutBack p)
        
-         
         return ()
 
       Reconnect token -> do
@@ -116,7 +109,7 @@ clientProxyInit stateVar serverAddress (PieceHooks {..}) (cryptoOps, repr) local
     
   -- it's some other connection - just proxy data without any 
   -- parsing or tampering
-  else return $ DataHooks { incoming = DC.map P.id
+  else return $ Proxy.DataHooks { incoming = DC.map P.id
                           , outgoing = DC.map P.id
                           , onDisconnect = return () -- don't do anything
                         }

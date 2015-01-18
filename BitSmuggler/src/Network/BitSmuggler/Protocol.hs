@@ -72,14 +72,14 @@ sendPipe packetSize arq encrypt =
  given to control messages;
  pushes Nothing upstream if no queue has anything
 
- the data queue is read only if the allowData flag is set
+ the data queue is accessible only through the data gate
  (mvar is available)
 -}
-msgSource controlSend userSend allowData = forever $ do
+msgSource controlSend userSend dataGate = forever $ do
   item <- liftIO $ atomically $
     (fmap Just $
        ((fmap Control $ readTQueue controlSend) `orElse`
-        (fmap Data $ readTMVar allowData >> readTQueue userSend)))
+        (fmap Data $ goThroughGate dataGate  >> readTQueue userSend)))
     `orElse` return Nothing
   DC.yield item
 
@@ -132,11 +132,6 @@ outgoingSink getPiece putBack = do
     Nothing -> return ()
 
 
-data Pipe r s = Pipe {
-    pipeRecv :: TQueue r 
-  , pipeSend :: TQueue s 
-}
-
 
 isolateAndPad :: Monad m => Int -> Conduit (Maybe BS.ByteString) m (Maybe BS.ByteString)
 isolateAndPad n = forever $ do
@@ -145,8 +140,24 @@ isolateAndPad n = forever $ do
 
 pad bs targetLen padding = BS.concat [bs, BS.replicate (targetLen - BS.length bs) padding]
 
+
+data Pipe r s = Pipe {
+    pipeRecv :: TQueue r 
+  , pipeSend :: TQueue s 
+}
+
+-- all channels and pipes for data grouped together
+data DataPipes r s = DataPipes {
+    controlPipe :: Pipe r s
+  , pieceHooks :: PieceHooks
+  -- used to bar the sending of data to remote
+  -- until all control communication is done so no data leakage occurs
+  , dataGate :: Gate
+}
+
 -- putting it all together
-launchPipes packetSize (PieceHooks {..}) arq encrypter decrypt control allowData = do
+launchPipes packetSize  arq encrypter decrypt
+            (DataPipes control (PieceHooks {..}) allowData) = do
   userSend <- liftIO $ (newTQueueIO :: IO (TQueue ByteString))
   userRecv <- liftIO $ (newTQueueIO :: IO (TQueue ByteString))
 
@@ -323,4 +334,22 @@ isolateWhileSmth =
 skipWhile p = do 
   w <- lookAhead getWord8
   if p w then skip 1 >> skipWhile p else return ()
+
+-- stm extras 
+
+-- used to stop a thread until some other thread opens the gate
+type Gate = TMVar ()
+
+-- starts out closed
+newGate :: IO Gate
+newGate = newEmptyTMVarIO
+
+-- blocks if the gate is closed
+goThroughGate g = readTMVar g
+
+-- these block if the gate is already in the right state open/closed
+openGate g = putTMVar g ()
+closeGate g = takeTMVar g
+
+
 
