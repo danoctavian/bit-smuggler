@@ -5,26 +5,6 @@ import Test.Hspec
 import Test.QuickCheck
 import Prelude as P
 
-{-
-import Control.Monad.IO.Class
-import Data.Map.Lazy as Map
-import System.IO.Temp
-import Data.Conduit
-import Data.Conduit.Binary as DC
-import Data.Serialize
-import Data.Conduit.Cereal
-import Control.Monad.Trans.Resource
-import qualified Data.Conduit.List as DCL 
-import System.IO
-import Control.Monad.IO.Class
-import Data.ByteString.Lazy as BSL
-import Data.ByteString as BS
-import Control.Monad 
-import System.FilePath
-import Data.Torrent
-import Data.Maybe
--}
-
 import Data.ByteString as BS
 import Data.ByteString.Arbitrary
 import Data.Serialize as DS
@@ -45,7 +25,6 @@ spec :: Spec
 spec = do
   describe "decrypts" $ do
     it "encrypted message matches decrypted" $ 
---      cprg <- makeCPRG
       property $ testEncryptDecrypt
   return ()
 
