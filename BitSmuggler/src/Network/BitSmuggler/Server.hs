@@ -87,8 +87,10 @@ listen config handle = runResourceT $ do
   -- setup proxies
 
   (reverseProxy, forwardProxy) <- startProxies (btClientConfig config) onConn
-  -- tell client to use the files
+
+  -- tell bittorrent client to use the files
   -- TODO: implement
+  liftIO $ addTorrents btClientConn (fst btProc) files
 
   -- wait for it...
   liftIO $ waitBoth (snd reverseProxy) (snd forwardProxy)

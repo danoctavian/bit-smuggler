@@ -81,6 +81,9 @@ library
                      , data-default >=0.5.3 && <0.6
                      , cprng-aes >=0.6.1 && <0.7
                      , mmap >=0.5.9 && <0.6
+                     , random-extras >=0.19 && <0.20
+                     , random-fu >=0.2.6 && <0.3
+                     , random-source >=0.3 && <0.4
 --                     , derive >=2.5.18 && <2.6
   hs-source-dirs:      src
   default-language:    Haskell2010

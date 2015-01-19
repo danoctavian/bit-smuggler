@@ -13,6 +13,7 @@ import Data.Serialize
 import Data.List as DL
 import Data.String
 import Control.Monad
+import System.IO
 
 import Network.BitSmuggler.Utils
 
@@ -22,7 +23,7 @@ data TorrentProc = TorrentProc {
     cleanState :: IO ()
   , start :: IO ()
   , setSettings :: [PreBootSetting] -> IO ()
-  , addFile :: P.FilePath -> IO () -- stores a data file for the torrent to use
+  , getFilePath :: P.FilePath -> P.FilePath
 }
 
 
@@ -34,7 +35,7 @@ uTorrentProc path = TorrentProc {
   , setSettings = \ss -> writeFile
                          (pathToString $ path </> ("utserver.conf" :: Sh.FilePath))
                          (P.concat $ intersperse "\n" $ P.map utConf ss)
-  , addFile = \file -> shelly $ cp (fromString file) path
+  , getFilePath = \file -> pathToString $ path </> file
 }
 
 utConfVar name val = name ++ ": " ++ val

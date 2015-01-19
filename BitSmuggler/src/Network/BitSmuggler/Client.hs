@@ -91,12 +91,14 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   
   userPipe <- launchPipes packetSize noARQ clientEncrypter (decrypt cryptoOps)  dataPipes
   userGate <- liftIO $ newGate -- closed gate
-
+  exitGate <- liftIO $ newGate
   -- the provided user handle. runs only when connection started
   -- (gate opens)
   allocLinkedAsync $ async $ do
      atomically $ goThroughGate userGate
      handle $ pipeToConnData userPipe
+     atomically $ openGate exitGate -- signal termination
+
 
   clientState <- liftIO $ newTVarIO $ ClientState Nothing 
 
@@ -109,6 +111,10 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   (reverseProxy, forwardProxy) <- startProxies btClientConfig onConn
   
   -- tell client to start working on file 
+
+  liftIO $ addTorrents btClientConn (fst btProc) [file]
+
+  liftIO $ atomically $ goThroughGate exitGate
   return ()
 
 

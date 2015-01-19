@@ -5,6 +5,7 @@ module Network.BitSmuggler.TorrentFile (
   , computeInfoHash
   , textToInfoHash
   , makeBlockLoader
+  , makePartial
 ) where
 
 import Crypto.Hash.SHA1 as SHA1
@@ -62,6 +63,19 @@ textToInfoHash text
     hashStr = T.encodeUtf8 text
     (ihStr, inv) = Base16.decode hashStr
 
+
+{-
+  constructs a partial torrent file from a full one
+  (takes out pieces by zeroing out that file region)
+-}
+makePartial pieceSize src dest filter = 
+  runResourceT $ sourceFile src =$ filterEvery pieceSize filter 0 $$ sinkFile dest
+
+filterEvery pieceSize filter ix = do
+  piece <- fmap BSL.toStrict $ DCB.take pieceSize
+  DC.yield $ if filter ix piece then piece else BS.replicate (BS.length piece) 0
+  filterEvery pieceSize filter (ix + 1)
+ 
 
 {-
 
