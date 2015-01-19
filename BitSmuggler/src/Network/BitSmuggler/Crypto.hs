@@ -67,6 +67,7 @@ type Encrypt = Entropy -> Message -> ByteString
 type Decrypt = ByteString -> Maybe Message
 data CryptoOps = CryptoOps {encrypt :: Encrypt, decrypt :: Decrypt}
 
+-- using large words to type encode the length of the keys
 type Key = Word256
 type Entropy = Word128
 
@@ -75,7 +76,6 @@ ivLen = 16
 authTagLen = 16
 msgHeaderLen :: Int
 msgHeaderLen = ivLen + authTagLen
--- TODO: implement the following
 
 -- derive client message to server (its pub key) and the encrypt/decrypt functions
 -- the runtime of this function does not have an upper bound - 
@@ -84,7 +84,7 @@ makeClientEncryption ::  CPRG g => Key -> g -> (CryptoOps, ByteString)
 makeClientEncryption serverPkWord gen
   = (makeCryptoOps privKey (pubFromWord256 serverPkWord), repr)
     where
-      (privKey, (pubKey, repr)) = fromJust $ P.foldl mplus Nothing
+      (privKey, (pubKey, repr)) = fromJust $ P.head $ P.dropWhile isNothing
            $ P.map (\rands -> let key = fromBytes rands in fmap (key,) $ elligatorInv key)
            $ L.unfoldr (\g -> Just $ cprgGenerate keySize g) gen
 
@@ -114,7 +114,7 @@ makeCryptoOps ownSecretKey otherPubKey
       return plaintext
   }
     where
-      aes = initAES $ toBytes $ diffieHellman ownSecretKey otherPubKey
+      aes = initAES $ toBytes $ dh ownSecretKey otherPubKey
 
 
 -- the crypto pseudo random number generator of choice for this app
