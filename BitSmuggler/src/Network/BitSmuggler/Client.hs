@@ -2,10 +2,13 @@
 module Network.BitSmuggler.Client where
 
 import Prelude as P hiding (read)
+import qualified Data.Tuple as Tup
 import Control.Monad.Trans.Resource
 import System.Log.Logger
 import Control.Monad.IO.Class
+import Control.Monad
 import Control.Exception
+import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Concurrent.STM.TQueue
 import System.Random
@@ -51,9 +54,8 @@ data ClientConfig = ClientConfig {
 data ClientStage = FirstConnect | Reconnect SessionToken
 
 data ClientState = ClientState {
-    stage :: ClientStage
-  , currentInfoHash :: InfoHash
-  , handlerTask :: Maybe (Async ())
+    serverToken :: Maybe SessionToken
+--  , currentInfoHash :: InfoHash
 }
 
 
@@ -75,9 +77,34 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
 
   cprg <- liftIO $ makeCPRG
   let (cryptoOps, pubKeyRepr) = makeClientEncryption (serverPubKey serverDescriptor) cprg
+  encryptCprg <- liftIO $ makeCPRG
+  let clientEncrypter = encrypter (encrypt cryptoOps) encryptCprg
+
   pieceHooks <- liftIO $ makePieceHooks
-    
-  let onConn = undefined
+
+  controlSend <-liftIO $ (newTQueueIO :: IO (TQueue ClientMessage))
+  controlRecv <- liftIO $ (newTQueueIO :: IO (TQueue ServerMessage))
+  let controlPipe = Pipe controlRecv controlSend
+   -- to handle the connection
+  dataGate <- liftIO $ newGate
+  let dataPipes = DataPipes controlPipe pieceHooks dataGate
+  
+  userPipe <- launchPipes packetSize noARQ clientEncrypter (decrypt cryptoOps)  dataPipes
+  userGate <- liftIO $ newGate -- closed gate
+
+  -- the provided user handle. runs only when connection started
+  -- (gate opens)
+  allocLinkedAsync $ async $ do
+     atomically $ goThroughGate userGate
+     handle $ pipeToConnData userPipe
+
+  clientState <- liftIO $ newTVarIO $ ClientState Nothing 
+
+  let fileFixer = findPieceLoader [file]
+ 
+  let handleConn = handleConnection clientState
+                    (cryptoOps, pubKeyRepr) userPipe userGate dataPipes
+  let onConn = clientProxyInit handleConn pieceHooks fileFixer (serverAddr serverDescriptor)
   -- setup proxies (socks and reverse)
   (reverseProxy, forwardProxy) <- startProxies btClientConfig onConn
   
@@ -85,28 +112,17 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   return ()
 
 
-clientProxyInit stateVar serverAddress (PieceHooks {..}) (cryptoOps, repr) local remote = do
-  if (remote == serverAddress)
+clientProxyInit handleConn pieceHs fileFix serverAddress direction local remote = do
+  if (fst remote == serverAddress)
   then do
-    state <- atomically $ readTVar stateVar
-    case stage state of 
-      FirstConnect -> do
-        cprg <- makeCPRG
+    forkIO $ handleConn
+    streams <- fmap (if direction == Reverse then Tup.swap else P.id) $
+                    makeStreams pieceHs fileFix
+    return $ DataHooks { incoming = P.fst streams
+                         , outgoing = P.snd streams 
+                         , onDisconnect = return () -- TODO: implement 
+                        }
 
-        -- send the first message (hanshake)
-        DC.sourceList [Just $ ConnRequest repr Nothing]
-                   =$ sendPipe packetSize (sendARQ noARQ)
-                        (encrypter (encryptHandshake (cryptoOps, repr)) cprg)
-                   $$ outgoingSink (read sendGetPiece) 
-                                   (\p -> write sendPutBack p)
-       
-        return ()
-
-      Reconnect token -> do
-        errorM logger "reconnect not implement at the moment"
-        throwIO UnsupportedFeature
-    return undefined    
-    
   -- it's some other connection - just proxy data without any 
   -- parsing or tampering
   else return $ Proxy.DataHooks { incoming = DC.map P.id
@@ -116,6 +132,39 @@ clientProxyInit stateVar serverAddress (PieceHooks {..}) (cryptoOps, repr) local
 
 
 packetSize = blockSize - Crypto.msgHeaderLen
+
+handleConnection stateVar  (cryptoOps, repr) userPipe userGate
+  (DataPipes control (PieceHooks {..}) dataGate) = do
+  state <- atomically $ readTVar stateVar
+
+  cprg <- makeCPRG
+  let prevToken = serverToken state
+
+  noGate <- newGate
+  atomically $ openGate noGate
+  -- send the first message (hanshake)
+  DC.sourceList [Just $ ConnRequest repr (serverToken state)]
+             =$ sendPipe packetSize (sendARQ noARQ)
+                  (encrypter (encryptHandshake (cryptoOps, repr)) cprg)
+             $$ outgoingSink (read sendGetPiece) 
+                             (\p -> write sendPutBack p) noGate
+
+  if (prevToken == Nothing) then do -- first time connecting
+    serverResponse <- liftIO $ atomically $ readTQueue (pipeRecv control)
+    case serverResponse of
+      AcceptConn token -> do
+        atomically $ modifyTVar stateVar (\s -> s {serverToken = Just token}) 
+        atomically $ openGate userGate -- start the user function
+      RejectConn -> do
+        errorM logger "connection rejected"
+        -- TODO: clean up conn
+        return ()
+  else do
+    infoM logger "it's a reconnect. nothing to do..."
+    atomically $ openGate dataGate -- allow messages to pass
+    
+  return ()
+
 {-
 
   before proxy init  -

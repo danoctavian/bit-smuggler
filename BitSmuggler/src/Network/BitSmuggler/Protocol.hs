@@ -26,6 +26,8 @@ import Network.BitSmuggler.Crypto as Crypto
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.BitTorrentParser as BT
 import Network.BitSmuggler.ARQ
+import Network.BitSmuggler.Common
+
 
 {-
 
@@ -62,24 +64,20 @@ recvPipe arq decrypt =
   DC.map decrypt =$ DC.catMaybes =$ arq
   =$ conduitGet (skipWhile (== padding) >> getMsg) =$ conduitGet get
 
-
 sendPipe packetSize arq encrypt =
   DC.map (fmap $ encodeMsg) =$ isolateAndPad packetSize =$ arq =$ (encryptPipe encrypt)
-
 
 {-
  read data and control messages with priority 
  given to control messages;
  pushes Nothing upstream if no queue has anything
 
- the data queue is accessible only through the data gate
- (mvar is available)
 -}
-msgSource controlSend userSend dataGate = forever $ do
+msgSource controlSend userSend = forever $ do
   item <- liftIO $ atomically $
     (fmap Just $
        ((fmap Control $ readTQueue controlSend) `orElse`
-        (fmap Data $ goThroughGate dataGate  >> readTQueue userSend)))
+        (fmap Data $ readTQueue userSend)))
     `orElse` return Nothing
   DC.yield item
 
@@ -119,8 +117,9 @@ encryptPipe encrypt = concatMapAccum
   if you have any payload from upstream to send, send it.
   if not pass back the piece unharmed.
 -}
-outgoingSink getPiece putBack = do
+outgoingSink getPiece putBack dataGate = do
   -- get a piece as it's about to leave the local bt client
+  lift $ atomically $ goThroughGate dataGate
   piece <- lift getPiece
   upstream <- await 
   case upstream of
@@ -128,7 +127,7 @@ outgoingSink getPiece putBack = do
       lift $ putBack $ case maybePayload of
         (Just payload) -> payload 
         Nothing -> piece  -- move on, nothing to change
-      outgoingSink getPiece putBack
+      outgoingSink getPiece putBack dataGate
     Nothing -> return ()
 
 
@@ -168,11 +167,16 @@ launchPipes packetSize  arq encrypter decrypt
 
   -- launch send pipe
   allocLinkedAsync $ async
-         $ (msgSource (pipeSend control) userSend allowData)
+         $ (msgSource (pipeSend control) userSend)
          =$ sendPipe packetSize (sendARQ arq) encrypter
-         $$ outgoingSink (read sendGetPiece) (\p -> write sendPutBack p)
+         $$ outgoingSink (read sendGetPiece) (\p -> write sendPutBack p) allowData
 
   return $ Pipe userRecv userSend
+
+pipeToConnData pipe = ConnData {
+      connSend = atomically . writeTQueue (pipeSend pipe)
+    , connRecv = atomically $ readTQueue (pipeRecv pipe)
+  }
 
 -- messages 
 

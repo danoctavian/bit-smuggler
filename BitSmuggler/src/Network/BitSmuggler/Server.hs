@@ -104,10 +104,10 @@ killConn = cancel . handlerTask
 
 -- TODO: check this out https://www.youtube.com/watch?v=uMK0prafzw0
 serverConnInit secretKey stateVar handleConn fileFix direction local remote = do
-  -- check if connection to this remote address is still active
-  --maybeConn <- atomically $ fmap (Map.lookup remote _. activeConns) $ readTVar stateVar
   pieceHs <- makePieceHooks
 
+  -- don't keep the proxy waiting and fork a worker
+  -- to handle the connection
   forkIO $ handleConnection stateVar pieceHs secretKey handleConn
 
   streams <- fmap (if direction == Reverse then Tup.swap else P.id) $
@@ -142,6 +142,7 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
       controlSend <-liftIO $ (newTQueueIO :: IO (TQueue ServerMessage))
       controlRecv <- liftIO $ (newTQueueIO :: IO (TQueue ClientMessage))
       let controlPipe = Pipe controlRecv controlSend
+  -- to handle the connection
       dataGate <- liftIO $ newGate 
       let dataPipes = DataPipes controlPipe pieceHooks dataGate
 
@@ -163,6 +164,7 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
       case maybeConn of
         Just conn -> do
           -- TODO: implement session loading
+          -- hint: use a proxy for incoming and out going bt pieces
           errorM logger "session loading not implemented!"
           throwIO UnsupportedFeature 
         Nothing -> do
@@ -184,9 +186,7 @@ runConnection packetSize arq encrypter decrypt token userHandle ps@(DataPipes {.
   liftIO $ atomically $ openGate dataGate
 
   -- run conn handler
-  liftIO $ userHandle $ ConnData {
-                          connSend = atomically . writeTQueue (pipeSend user)
-                        , connRecv = atomically $ readTQueue (pipeRecv user) }
+  liftIO $ userHandle $ pipeToConnData user
   return ()
 
  
