@@ -1,6 +1,8 @@
 bit-smuggler
 ============
 
+UNDER DEVELOPMENT - not runnable at the moment
+
 pluggable transport for censorship circumvention
 
 check out Chapter 1 intro in https://github.com/danoctavian/bit-smuggler/tree/master/docs/Report.pdf for an overview of the project.
