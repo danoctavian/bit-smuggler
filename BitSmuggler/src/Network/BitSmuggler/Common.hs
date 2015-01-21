@@ -35,6 +35,7 @@ import Control.Exception
 import Control.Monad
 import System.Log.Logger
 import System.FilePath
+import System.IO hiding (openTempFile)
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Lazy.Char8 as BSLC
 import System.Random 
@@ -199,8 +200,9 @@ addTorrents btClientConn btProc files = do
       debugM logger $ "created a partially completed file" P.++ (show dataFile)
 
       runResourceT $ do
-        (_, path, _) <- openTempFile Nothing (fName ++ ".torrent")
-        liftIO $ BSL.writeFile path (bPack $ serializeTorrent torrentFile)
+        (_, path, handle) <- openTempFile Nothing (fName ++ ".torrent")
+        liftIO $ BS.hPutStr  handle (BSL.toStrict $ bPack $ serializeTorrent torrentFile)
+        liftIO $ hClose handle
 
         liftIO $ debugM logger $ "telling  the bt client to use " P.++ (show dataFile)
         liftIO $ addTorrentFile btClientConn path
