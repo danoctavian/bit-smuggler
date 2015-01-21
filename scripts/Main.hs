@@ -12,6 +12,7 @@ import Data.ByteString.Lazy.Char8 as BSLC
 import Data.String
 import Data.Text as Txt
 import Control.Exception
+import Data.IP
 
 import System.IO as Sys
 import System.Random
@@ -221,6 +222,29 @@ runSimpleProxy = do
                                                }
           , handshake = Socks4.serverProtocol
      }
+
+runSimpleRevProxy ip port = do
+  updateGlobalLogger logger (setLevel DEBUG)
+
+  Proxy.run $  Proxy.Config { proxyPort = 2002
+          , initHook = \_ _ -> return DataHooks { incoming = DC.map P.id
+                                                , outgoing = DC.map P.id
+                                                , onDisconnect = return ()
+                                               }
+          , handshake = revProxy ip port
+     }
+
+runTestRev = runSimpleRevProxy (IPv4 $ toIPv4 [127, 0, 0, 1]) 7882
+
+revProxy ip port = return $ ProxyAction {
+                      Proxy.command = CONNECT
+                    , remoteAddr = (Right ip, port)
+                    , onConnection = \ _ -> return ()
+                    }
+
+
+
+
 
 
 -- this is so stupid I don't even..

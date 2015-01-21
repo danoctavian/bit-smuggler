@@ -14,6 +14,8 @@ module Network.BitSmuggler.Common (
   , ProxyDir (..)
   , startProxies
   , addTorrents
+  , logger
+  , makeRandPartial
 ) where
 
 import Prelude as P
@@ -184,6 +186,8 @@ findPieceLoader contactFiles ih = runMaybeT $ do
 addTorrents btClientConn btProc files = do
   -- construct partials
   forM files $ \(infoHash, (dataFile, torrentFile)) -> do
+      debugM logger $ "adding for torrenting the file " P.++ (show dataFile)
+
       let sf@(SingleFile {..}) = tInfo torrentFile -- assuming it's a single file
       let pieceCount = tLength `div` tPieceLength 
       let fName = (BSLC.unpack tName)
@@ -192,25 +196,30 @@ addTorrents btClientConn btProc files = do
       makeRandPartial (fromIntegral tPieceLength) (fromIntegral pieceCount)
                        dataFile (getFilePath btProc fName)
 
+      debugM logger $ "created a partially completed file" P.++ (show dataFile)
+
       runResourceT $ do
         (_, path, _) <- openTempFile Nothing (fName ++ ".torrent")
         liftIO $ BSL.writeFile path (bPack $ serializeTorrent torrentFile)
+
+        liftIO $ debugM logger $ "telling  the bt client to use " P.++ (show dataFile)
         liftIO $ addTorrentFile btClientConn path
 
         -- wait for it to upload
         retrying (constantDelay $ 10 ^ 5 * 5) (\_ isUploaded -> return $ not isUploaded) $
           (liftIO $ listTorrents btClientConn)
           >>= (return . (P.elem infoHash) . P.map torrentID)
+        liftIO $ debugM logger $ "finished adding file" P.++ (show dataFile)
+
   return ()
 
 
 -- make a file with only part of the pieces present, chosen at random
 makeRandPartial pieceSize pieceCount origin dest = do
-  chosenIxs <- runRVar (sample (pieceCount `div` 2) [0..(pieceCount - 1)]) DevRandom
+  chosenIxs <- runRVar (sample (pieceCount `div` 2) [0..(pieceCount - 1)]) DevURandom
   let pieceSet = Set.fromList chosenIxs
   makePartial pieceSize origin dest (\i _ -> Set.member i pieceSet)
  
-
 -- == PROXYING ==
 
 data ProxyDir = Forward | Reverse deriving (Show, Eq)
@@ -237,4 +246,5 @@ revProxy ip port = return $ ProxyAction {
                           , remoteAddr = (Right ip, port)
                           , onConnection = \ _ -> return () 
                           }
+
 

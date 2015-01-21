@@ -73,9 +73,9 @@ makePartial pieceSize src dest filter =
 
 filterEvery pieceSize filter ix = do
   piece <- fmap BSL.toStrict $ DCB.take pieceSize
-  DC.yield $ if filter ix piece then piece else BS.replicate (BS.length piece) 0
-  filterEvery pieceSize filter (ix + 1)
- 
+  when (BS.length piece > 0) $ do
+    DC.yield $ if filter ix piece then piece else BS.replicate (BS.length piece) 0
+    filterEvery pieceSize filter (ix + 1)
 
 {-
 

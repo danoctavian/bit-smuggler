@@ -20,7 +20,7 @@ import System.Log.Logger
 
 import Data.Conduit.Binary as DC
 
-import Network.BitSmuggler.Common
+import Network.BitSmuggler.Common as Common
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.TorrentFile
 import Network.BitSmuggler.Crypto as Crypto
@@ -42,12 +42,18 @@ setupFileCache = do
 
 runDemoClient = do
   updateGlobalLogger Client.logger  (setLevel DEBUG)
+  updateGlobalLogger Sim.logger  (setLevel DEBUG)
+  updateGlobalLogger Common.logger  (setLevel DEBUG)
+
+
   contact <- makeContactFile
   (serverDesc, _) <- makeServerDescriptor contact
 
   let connData = ConnectionData {connTorrent = BT.Torrent  (infoHash contact) "testFile.txt"
             , dataFile = streamFile
-            , peerAddr = (localhost, pubBitTorrentPort serverBTClientConfig)
+              -- no need for iptables redirection: we tell the bittorrent simulator
+              -- to connect straight to the reverse proxy
+            , peerAddr = (localhost, revProxyPort serverBTClientConfig)
             , proxyAddr = (localhost, socksProxyPort clientBTClientConfig)}
 
   proc <- simulatorProc clientBTRoot (Map.fromList [(Left testTFile, connData)])  streamFile
@@ -60,6 +66,8 @@ runDemoClient = do
 
 runDemoServer = do
   updateGlobalLogger Server.logger  (setLevel DEBUG)
+  updateGlobalLogger Sim.logger  (setLevel DEBUG)
+  updateGlobalLogger Common.logger  (setLevel DEBUG)
 
   contact <- makeContactFile
   (serverDesc, sk) <- makeServerDescriptor contact
@@ -117,7 +125,7 @@ clientBTClientConfig = BTClientConfig {
 }
 
 serverBTClientConfig = BTClientConfig {
-    pubBitTorrentPort = 6881
+    pubBitTorrentPort = 7881
   , socksProxyPort = 2001
   , revProxyPort = 2002
   , cmdPort = 9000 -- port on which it's receiving commands

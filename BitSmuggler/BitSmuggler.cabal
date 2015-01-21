@@ -97,6 +97,8 @@ executable bit-smuggler-app
   build-depends:
       base >= 4.7 && < 4.8
     , BitSmuggler 
+    , bytestring
+    , torrent
 
 
 Test-Suite spec

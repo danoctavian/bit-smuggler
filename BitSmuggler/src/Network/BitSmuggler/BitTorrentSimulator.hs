@@ -8,6 +8,7 @@ module Network.BitSmuggler.BitTorrentSimulator (
   , clientConn
   , NetworkChunk (..)
   , ConnectionData (..)
+  , logger
   )where
 
 import Prelude as P
@@ -141,11 +142,15 @@ data Config = Config {
 runClient conf = do
   tchan <- newTChanIO
   ts <- newTVarIO Map.empty -- (Map.fromList [(torrentID fooTorrent, (fooTorrent, tchan))])
+  debugM logger "running bittorrent client simulator.."
+
   let th = TorrentHandler ts 
                        (\k -> Map.lookup k (resourceMap conf))
   concurrently (runServer th (rpcPort conf)) (listenForPeers (respSource conf) $ peerPort conf)
 
 listenForPeers respSource port = do
+  debugM logger "listening for incoming peer connections.."
+
   runTCPServer (serverSettings (fromIntegral port) "*") $ \appData -> do
     debugM logger "received connection. draining socket.."
     cmdChan <- newTChanIO 
@@ -156,8 +161,10 @@ listenForPeers respSource port = do
 
 -- command server (rpc interface to send commands to the client)
 runServer th port = do
- s <- tcpServer (PortNum . portNumFixEndian $ port)
- serve s $ dispatch th 
+  s <- tcpServer (PortNum . portNumFixEndian $ port)
+  debugM logger "running command server.."
+ 
+  serve s $ dispatch th 
 
 dispatch th "bittorrent" op params = case (read op, params) of
   (AddMagnetOp, [m]) -> do
@@ -191,13 +198,17 @@ messageTorrent th msg ihTerm = do
 fooTorrent = Torrent (Bin.decode $ BSL.replicate 20 1) "wtf.txt"
 
 newTorrent th source = do
+  debugM logger $ "adding a new torrent with source " P.++ (show source)
+
   case resource th source of
     Nothing -> do
       debugM logger $ "torrent data not present. not streaming anything"
      
     Just connData -> do
       let t = connTorrent connData
+      debugM logger $ "torrent data is present. starting streaming.."
       cmdChan <- newTChanIO 
+
       atomically $ modifyTVar (torrents th) (Map.insert (torrentID t) (t, cmdChan))
       debugM logger "updated torrents list"
       forkIO $ do

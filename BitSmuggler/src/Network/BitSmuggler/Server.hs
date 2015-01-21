@@ -28,7 +28,7 @@ import Data.Tuple as Tup
 import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature)
 import Network.TCP.Proxy.Socks4 as Socks4
 
-import Network.BitSmuggler.Common hiding (contactFiles)
+import Network.BitSmuggler.Common hiding (contactFiles, logger)
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.Protocol
 import Network.BitSmuggler.ARQ as ARQ

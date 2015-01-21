@@ -20,7 +20,7 @@ import Data.Conduit.List as DC
 
 import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature)
 
-import Network.BitSmuggler.Common
+import Network.BitSmuggler.Common hiding (logger)
 import Network.BitSmuggler.Crypto as Crypto
 import Network.BitSmuggler.Protocol
 import Network.BitSmuggler.Utils
@@ -181,19 +181,6 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
     atomically $ openGate dataGate -- allow messages to pass
     
   return ()
-
-{-
-  before proxy init  -
-   setup chans for bittorrent stream
-   setup chans for userdata 
-    pass in the bt stream chans to proxy_init
-  proxies init
- check if remote is desired server. if not, just proxy traffic
-  without doing anything else.
-
-  if it is, just place in the hooks
--}
-
 
 randInt :: (Int, Int) ->  IO Int 
 randInt range = getStdGen >>= return . fst . (randomR range)
