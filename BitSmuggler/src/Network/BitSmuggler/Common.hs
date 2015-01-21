@@ -91,7 +91,7 @@ data ContactFile = FakeFile {
                    , torrentFile :: Torrent 
                    , infoHash :: InfoHash -- check whether this file is good
                  }
-                 | RealFile InfoHash
+                 | RealFile {infoHash :: InfoHash}
 
 
 data ServerDescriptor = ServerDescriptor {

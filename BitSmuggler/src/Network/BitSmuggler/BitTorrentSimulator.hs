@@ -1,6 +1,14 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, OverloadedStrings #-}
 
-module Network.BitSmuggler.BitTorrentSimulator where
+module Network.BitSmuggler.BitTorrentSimulator (
+    runClient  
+  , Config (..)
+  , TorrentFileID
+  , simulatorProc
+  , clientConn
+  , NetworkChunk (..)
+  , ConnectionData (..)
+  )where
 
 import Prelude as P
 import Network.BitTorrent.ClientControl as BT
@@ -40,7 +48,7 @@ import System.Log.Logger
 import System.IO
 import Control.Monad.Trans.Either
 import Network.BitSmuggler.Utils
-
+import qualified Network.BitSmuggler.TorrentClientProc as Proc
 
 {-
   simulates the network activity of a real bittorrent client
@@ -103,6 +111,25 @@ clientConn url port = do
   }
 
 
+simulatorProc root resMap respSrc = do
+  settingsVar <- newTVarIO (Nothing, Nothing)
+  return $ Proc.TorrentProc {
+    Proc.cleanState = return ()
+  , Proc.start = do
+    (Just rpc, Just peer)  <- atomically $ readTVar settingsVar
+    forkIO $ (runClient $ Config {resourceMap = resMap, rpcPort = rpc, peerPort = peer
+                         , respSource = respSrc}) >> return ()
+    return ()
+  , Proc.setSettings = \ss -> do
+      s <- return $ case ss of 
+        [Proc.CmdPort c, Proc.BindPort b] -> (Just c, Just b)
+        [Proc.BindPort b, Proc.CmdPort c] -> (Just c, Just b)
+      atomically $ writeTVar settingsVar s
+
+  , Proc.getFilePath = \f ->  root P.++ "/" P.++ f
+}
+
+
 type TorrentFileID = Either String InfoHash
 data Config = Config {
     resourceMap :: Map.Map TorrentFileID ConnectionData
@@ -115,7 +142,7 @@ runClient conf = do
   tchan <- newTChanIO
   ts <- newTVarIO Map.empty -- (Map.fromList [(torrentID fooTorrent, (fooTorrent, tchan))])
   let th = TorrentHandler ts 
-                       (fromJust . (\k -> Map.lookup k (resourceMap conf)))
+                       (\k -> Map.lookup k (resourceMap conf))
   concurrently (runServer th (rpcPort conf)) (listenForPeers (respSource conf) $ peerPort conf)
 
 listenForPeers respSource port = do
@@ -164,17 +191,22 @@ messageTorrent th msg ihTerm = do
 fooTorrent = Torrent (Bin.decode $ BSL.replicate 20 1) "wtf.txt"
 
 newTorrent th source = do
-  let connData = resource th source
-  let t = connTorrent connData
-  cmdChan <- newTChanIO 
-  atomically $ modifyTVar (torrents th) (Map.insert (torrentID t) (t, cmdChan))
-  debugM logger "updated torrents list"
-  forkIO $ do
-    asyncTorrent <- async $ doTorrent cmdChan connData
-    final <- waitCatch $ asyncTorrent
-    debugM logger $ "torrent finished. deleting " P.++ (show $ torrentID t)
+  case resource th source of
+    Nothing -> do
+      debugM logger $ "torrent data not present. not streaming anything"
+     
+    Just connData -> do
+      let t = connTorrent connData
+      cmdChan <- newTChanIO 
+      atomically $ modifyTVar (torrents th) (Map.insert (torrentID t) (t, cmdChan))
+      debugM logger "updated torrents list"
+      forkIO $ do
+        asyncTorrent <- async $ doTorrent cmdChan connData
+        final <- waitCatch $ asyncTorrent
+        debugM logger $ "torrent finished. deleting " P.++ (show $ torrentID t)
 
-    atomically $ modifyTVar (torrents th) (Map.delete (torrentID t))
+        atomically $ modifyTVar (torrents th) (Map.delete (torrentID t))
+      return ()
 
 
 doTorrent cmdChan connData = do
@@ -241,7 +273,7 @@ data ConnectionData = ConnectionData {
 
 data TorrentHandler = TorrentHandler {
     torrents :: TVar (Map InfoHash (Torrent, TChan Cmd))
-  , resource :: TorrentFileID -> ConnectionData
+  , resource :: TorrentFileID -> Maybe ConnectionData
 }
 
 

@@ -29,6 +29,7 @@ import System.Log.Logger
 import Data.Conduit.Binary
 import Data.Conduit.List as CL
 import Data.Conduit as DC
+import Data.Conduit.List as DC
 import Data.Conduit.Network
 
 import Network.BitTorrent.Shepherd as Tracker
@@ -36,6 +37,7 @@ import Network.BitTorrent.ClientControl
 import Network.BitTorrent.ClientControl.UTorrent
 import Network.BitSmuggler.BitTorrentSimulator as Sim hiding (logger)
 import Network.BitSmuggler.Utils
+import Network.BitSmuggler.Common
 import Data.Serialize as DS
 import Control.Concurrent
 import Control.Concurrent.Async
@@ -48,6 +50,10 @@ import Control.Monad.Trans.Resource
 
 project created to run experiments 
 -}
+
+
+main = do
+  runResourceT $ genRandBytes 23456 100000000 $$ sinkFile "testFile.txt"
 
 {-
 
@@ -83,7 +89,7 @@ logger = "scripts"
 initCaptureHook incFile outFile a1 a2 = do
   incHook <- captureHook incFile
   outHook <- captureHook outFile
-  return $ DataHooks incHook outHook 
+  return $ DataHooks incHook outHook (return ())
 
 --captureHook :: Sys.FilePath -> IO (BS.ByteString -> IO BS.ByteString)
 captureHook file = do
@@ -112,7 +118,7 @@ printChunk = awaitForever $
 
 trafficProxy = do
   Proxy.run $ Proxy.Config { proxyPort = 1080
-            , initHook = (\_ _ -> return $ DataHooks printChunk printChunk) 
+            , initHook = (\_ _ -> return $ DataHooks printChunk printChunk (return ())) 
             , handshake = Socks4.serverProtocol
        }
 
@@ -139,8 +145,8 @@ testRun = do
   updateGlobalLogger logger (setLevel DEBUG)
   peerSeedTalk "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_0/"
                        "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_1/"
-                       "../BitSmuggler/test-data/randFileSmall"
-                       "../BitSmuggler/test-data/randFileSmall.torrent"
+                       "../demo/contactFile/testFile.txt"
+                       "../demo/contactFile/testFile.torrent"
 
 -- script - 2 utorrent clients talk to get a file 
 peerSeedTalk :: Sh.FilePath -> Sh.FilePath -> Sh.FilePath -> Sh.FilePath -> IO ()
@@ -154,7 +160,7 @@ peerSeedTalk seedPath peerPath dataFilePath tFilePath = runResourceT $ do
 
   trackEvents <- liftIO $ newTChanIO 
   tracker <- allocAsync $ async $ runTracker
-                        $ Tracker.Config {listenPort = 6969, events = Just trackEvents}
+                        $ Tracker.Config {listenPort = 6666, events = Just trackEvents}
 
   liftIO $ waitFor (== Booting) trackEvents
   liftIO $ debugM logger "tracker is booting"
@@ -203,6 +209,19 @@ testTCPSrcPort = 6889
 
 testTCPServer = runTCPServer (serverSettings testTCPSrcPort "*") $ \app -> do
   P.putStrLn $ show $ appSockAddr app
+
+
+runSimpleProxy = do
+  updateGlobalLogger logger (setLevel DEBUG)
+
+  Proxy.run $  Proxy.Config { proxyPort = 1080
+          , initHook = \_ _ -> return DataHooks { incoming = DC.map P.id
+                                                , outgoing = DC.map P.id
+                                                , onDisconnect = return ()
+                                               }
+          , handshake = Socks4.serverProtocol
+     }
+
 
 -- this is so stupid I don't even..
 pathToString ::Sh.FilePath -> String

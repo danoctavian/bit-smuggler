@@ -130,8 +130,6 @@ outgoingSink getPiece putBack dataGate = do
       outgoingSink getPiece putBack dataGate
     Nothing -> return ()
 
-
-
 isolateAndPad :: Monad m => Int -> Conduit (Maybe BS.ByteString) m (Maybe BS.ByteString)
 isolateAndPad n = forever $ do
   bytes <- fmap BS.concat $ isolateWhileSmth n =$ DC.consume

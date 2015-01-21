@@ -28,8 +28,9 @@ library
     Network.BitSmuggler.ARQ
     Network.BitSmuggler.BitTorrentParser
     Network.BitSmuggler.Crypto
-  other-modules:       
+    Network.BitSmuggler.DemoSetup
     Network.BitSmuggler.Common
+  other-modules:       
     Network.BitSmuggler.TorrentClientProc
 
   -- other-extensions:    
@@ -128,10 +129,5 @@ Test-Suite spec
                    , helligator >=0.1 && <0.2
                    , byteable >=0.1.1 && <0.2
                    , bytestring-arbitrary >=0.0.3 && <0.1
-
-
-
-
-
 
 

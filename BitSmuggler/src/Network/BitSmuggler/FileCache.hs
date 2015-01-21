@@ -19,6 +19,8 @@ import System.Directory
 
 {-
 cache of files stored in a directory
+
+WARNING: not thread-safe
 -}
 
 data FileCache k = FileCache {
@@ -40,10 +42,14 @@ load root = do
   return $ FileCache {
       lookup = \k -> (atomically $ readTVar tvar) >>= (return . Map.lookup k)
     , put  = \k source -> do
-        (path, handle) <- openTempFile root "file.data" 
-        source $$ sinkHandle handle
-        hClose handle
-        atomically $ modifyTVar tvar (Map.insert k path)
-        return path
+        map <- atomically $ readTVar tvar
+        case Map.lookup k map of
+          Just path -> return path -- don't store again
+          Nothing -> do
+            (path, handle) <- openTempFile root "file.data" 
+            source $$ sinkHandle handle
+            hClose handle
+            atomically $ modifyTVar tvar (Map.insert k path)
+            return path
     , close = (atomically $ readTVar tvar) >>= BS.writeFile mapFilePath . encode
   } 

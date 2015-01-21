@@ -88,6 +88,8 @@ listen config handle = runResourceT $ do
 
   (reverseProxy, forwardProxy) <- startProxies (btClientConfig config) onConn
 
+  liftIO $ debugM logger "finished initialization"
+
   -- tell bittorrent client to use the files
   -- TODO: implement
   liftIO $ addTorrents btClientConn (fst btProc) files
@@ -107,6 +109,8 @@ killConn = cancel . handlerTask
 -- TODO: check this out https://www.youtube.com/watch?v=uMK0prafzw0
 serverConnInit secretKey stateVar handleConn fileFix direction local remote = do
   pieceHs <- makePieceHooks
+
+  liftIO $ debugM logger $ "attempting connection to remote address " P.++ (show remote)
 
   -- don't keep the proxy waiting and fork a worker
   -- to handle the connection
@@ -135,6 +139,9 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
   case fstClientMessage of
     (ConnRequest keyRepr Nothing) -> do
       -- client is requesting the creation of a new session
+
+      liftIO $ debugM logger $ "client requests new session "
+
       let crypto = makeServerEncryption secretKey keyRepr
       initCprg <- liftIO $ makeCPRG
       let (token, cprg) = cprgGenerate tokenLen initCprg

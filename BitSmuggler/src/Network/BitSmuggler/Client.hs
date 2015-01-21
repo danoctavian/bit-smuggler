@@ -75,6 +75,8 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
 
   [file] <- setupContactFiles [contactFile] fileCachePath
 
+
+  -- == CLIENT INITIALIZATION =
   cprg <- liftIO $ makeCPRG
   let (cryptoOps, pubKeyRepr) = makeClientEncryption (serverPubKey serverDescriptor) cprg
   encryptCprg <- liftIO $ makeCPRG
@@ -85,7 +87,7 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   controlSend <-liftIO $ (newTQueueIO :: IO (TQueue ClientMessage))
   controlRecv <- liftIO $ (newTQueueIO :: IO (TQueue ServerMessage))
   let controlPipe = Pipe controlRecv controlSend
-   -- to handle the connection
+
   dataGate <- liftIO $ newGate
   let dataPipes = DataPipes controlPipe pieceHooks dataGate
   
@@ -107,11 +109,15 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   let handleConn = handleConnection clientState
                     (cryptoOps, pubKeyRepr) userPipe userGate dataPipes
   let onConn = clientProxyInit handleConn pieceHooks fileFixer (serverAddr serverDescriptor)
+
+  liftIO $ debugM logger "finished initializng client..."
+
   -- setup proxies (socks and reverse)
   (reverseProxy, forwardProxy) <- startProxies btClientConfig onConn
   
   -- tell client to start working on file 
 
+  liftIO $ debugM logger "adding files to bittorrent client..."
   liftIO $ addTorrents btClientConn (fst btProc) [file]
 
   liftIO $ atomically $ goThroughGate exitGate
@@ -119,6 +125,9 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
 
 
 clientProxyInit handleConn pieceHs fileFix serverAddress direction local remote = do
+
+  liftIO $ debugM logger $ "bittorrent client connects to remote " P.++ (show remote)
+
   if (fst remote == serverAddress)
   then do
     forkIO $ handleConn
@@ -159,6 +168,8 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
     serverResponse <- liftIO $ atomically $ readTQueue (pipeRecv control)
     case serverResponse of
       AcceptConn token -> do
+        liftIO $ debugM logger $ "connection to server succesful "
+
         atomically $ modifyTVar stateVar (\s -> s {serverToken = Just token}) 
         atomically $ openGate userGate -- start the user function
       RejectConn -> do
@@ -172,7 +183,6 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
   return ()
 
 {-
-
   before proxy init  -
    setup chans for bittorrent stream
    setup chans for userdata 
