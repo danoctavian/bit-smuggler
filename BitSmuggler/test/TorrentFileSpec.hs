@@ -37,10 +37,6 @@ dataFileSmallTFile = "test-data/randFileSmall.torrent"
 
 spec :: Spec
 spec = do
-  describe "makePartial" $ do
-    it "zeroes out the missing pieces of a torrentable file" $ do
-      return ()
- 
   describe "hashPieces" $ do
     it "matches piece hashes in model torrent file" $ do
       (Right torrentFile) <- fmap readTorrent $ BSL.readFile dataFileSmallTFile

@@ -121,9 +121,7 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   liftIO $ addTorrents btClientConn (fst btProc) [file]
 
   liftIO $ debugM logger "waiting for user handle to execute."
-
   liftIO $ atomically $ goThroughGate exitGate
-
   liftIO $ debugM logger "client is terminated."
 
   return ()

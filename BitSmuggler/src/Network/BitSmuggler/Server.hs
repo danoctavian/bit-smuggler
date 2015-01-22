@@ -110,7 +110,8 @@ killConn = cancel . handlerTask
 serverConnInit secretKey stateVar handleConn fileFix direction local remote = do
   pieceHs <- makePieceHooks
 
-  liftIO $ debugM logger $ "attempting connection to remote address " P.++ (show remote)
+  liftIO $ debugM logger $ "handling a connection to or from remote address "
+                         P.++ (show remote)
 
   -- don't keep the proxy waiting and fork a worker
   -- to handle the connection
