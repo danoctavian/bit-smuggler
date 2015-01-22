@@ -49,14 +49,16 @@ runDemoClient = do
   contact <- makeContactFile
   (serverDesc, _) <- makeServerDescriptor contact
 
-  let connData = ConnectionData {connTorrent = BT.Torrent  (infoHash contact) "testFile.txt"
+  let connData = ConnectionData {
+              connTorrent = BT.Torrent  (infoHash contact) $ takeFileName testDataFile
             , dataFile = streamFile
               -- no need for iptables redirection: we tell the bittorrent simulator
               -- to connect straight to the reverse proxy
             , peerAddr = (localhost, revProxyPort serverBTClientConfig)
             , proxyAddr = (localhost, socksProxyPort clientBTClientConfig)}
 
-  proc <- simulatorProc clientBTRoot (Map.fromList [(Left testTFile, connData)])  streamFile
+  proc <- simulatorProc clientBTRoot
+           (Map.fromList [(Left $ takeFileName testDataFile, connData)])  streamFile
 
   let btC = clientBTClientConfig {btProc = proc}
   Client.clientConnect (ClientConfig btC serverDesc serverCachePath) $ \c -> do
@@ -93,7 +95,7 @@ clientCachePath = root </> "client/cache"
 serverCachePath = root </> "server/cache"
 
 
-streamFile = root </> "contactFile/testFileStream"
+streamFile = root </> "contactFile/testFileLenPrefixedStream"
 testTFile = root </> "contactFile/testFile.torrent"
 
 testDataFile = root </> "contactFile/testFile.txt"
@@ -117,8 +119,8 @@ makeServerDescriptor contact = do
 
 clientBTClientConfig = BTClientConfig {
     pubBitTorrentPort = 5881
-  , socksProxyPort = 1001
-  , revProxyPort = 1002
+  , socksProxyPort = 2001
+  , revProxyPort = 2002
   , cmdPort = 8000 -- port on which it's receiving commands
     -- host, port, (uname, password)
   , connectToClient = Sim.clientConn 
@@ -126,8 +128,8 @@ clientBTClientConfig = BTClientConfig {
 
 serverBTClientConfig = BTClientConfig {
     pubBitTorrentPort = 7881
-  , socksProxyPort = 2001
-  , revProxyPort = 2002
+  , socksProxyPort = 3001
+  , revProxyPort = 3002
   , cmdPort = 9000 -- port on which it's receiving commands
     -- host, port, (uname, password)
   , connectToClient = Sim.clientConn 

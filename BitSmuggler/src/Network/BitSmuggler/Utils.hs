@@ -24,6 +24,7 @@ module Network.BitSmuggler.Utils (
   , byteString
   , BitSmugglerException (..)
   , hoistMaybe
+  , toLazy
 ) where
 
 import Data.Typeable
@@ -153,3 +154,6 @@ allocLinkedAsync runAsync
       a <- runAsync
       link a
       return a) (liftIO . cancel)
+
+-- BYTESTRING
+toLazy bs = BSL.fromChunks [bs]

@@ -22,6 +22,7 @@ import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM.TVar
 import Control.Concurrent.STM
 import Control.Monad
+import Control.Applicative
 import Control.Monad.Trans
 import Data.Map.Strict as Map
 import Data.Serialize as DS
@@ -45,6 +46,7 @@ import Data.Conduit.Binary
 import Data.Conduit.Network
 import Control.Monad
 import System.Log.Logger
+import qualified Data.Torrent as T
  
 import System.IO
 import Control.Monad.Trans.Either
@@ -199,8 +201,12 @@ fooTorrent = Torrent (Bin.decode $ BSL.replicate 20 1) "wtf.txt"
 
 newTorrent th source = do
   debugM logger $ "adding a new torrent with source " P.++ (show source)
-
-  case resource th source of
+  realSource <- case source of
+    Left torrentFilePath -> do
+      tFile <- (fromRight . T.readTorrent . toLazy) <$> BS.readFile torrentFilePath
+      return $ Left $ BSLC.unpack $ T.tName $ T.tInfo tFile  
+    Right v -> return $ Right v
+  case resource th realSource of
     Nothing -> do
       debugM logger $ "torrent data not present. not streaming anything"
      
@@ -214,7 +220,9 @@ newTorrent th source = do
       forkIO $ do
         asyncTorrent <- async $ doTorrent cmdChan connData
         final <- waitCatch $ asyncTorrent
-        debugM logger $ "torrent finished. deleting " P.++ (show $ torrentID t)
+        
+        debugM logger $ "torrent finished with " P.++ show final P.++ 
+                         " deleting " P.++ (show $ torrentID t)
 
         atomically $ modifyTVar (torrents th) (Map.delete (torrentID t))
       return ()
@@ -222,6 +230,8 @@ newTorrent th source = do
 
 doTorrent cmdChan connData = do
   let cd = connData
+  debugM logger $ "attempting connection to " P.++ (show $ peerAddr cd) P.++
+                  " through the proxy with address " P.++ (show $ proxyAddr cd)
   runProxyTCPClient (BSC.pack . fst . proxyAddr $ cd) (snd . proxyAddr $ cd)
     (Socks4.clientProtocol (read . fst . peerAddr $ cd, snd . peerAddr $ cd) CONNECT)
     $ \sink resSrc remoteConn -> do

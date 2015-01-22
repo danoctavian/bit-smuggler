@@ -227,14 +227,14 @@ makeRandPartial pieceSize pieceCount origin dest = do
 data ProxyDir = Forward | Reverse deriving (Show, Eq)
 
 startProxies btConf onConn = do
-  reverseProxy <- allocAsync $ async $ Proxy.run $ Proxy.Config {
+  reverseProxy <- allocLinkedAsync $ async $ Proxy.run $ Proxy.Config {
                  proxyPort = revProxyPort btConf
                , initHook = P.flip (onConn Reverse)
                , handshake = revProxy (read localhost :: IP) (pubBitTorrentPort btConf)
              }
 
   -- forward socks 
-  forwardProxy <- allocAsync $ async $ Proxy.run $ Proxy.Config {
+  forwardProxy <- allocLinkedAsync $ async $ Proxy.run $ Proxy.Config {
                  proxyPort = socksProxyPort btConf
                , initHook = onConn Forward
                , handshake = Socks4.serverProtocol

@@ -38,7 +38,7 @@ import Network.BitTorrent.ClientControl
 import Network.BitTorrent.ClientControl.UTorrent
 import Network.BitSmuggler.BitTorrentSimulator as Sim hiding (logger)
 import Network.BitSmuggler.Utils
-import Network.BitSmuggler.Common
+import Network.BitSmuggler.Common hiding (logger)
 import Data.Serialize as DS
 import Control.Concurrent
 import Control.Concurrent.Async
@@ -100,7 +100,7 @@ captureHook file = do
   debugM logger $ "setting up capture for " P.++ file
   forkIO $ do
     withFile (file P.++ (show r)) WriteMode $ \fileH -> do
-      sourceTChan tchan {- =$ (CL.map (DS.encode . NetworkChunk)) -}  $$ sinkHandle fileH
+      sourceTChan tchan  =$ (CL.map (DS.encode . NetworkChunk))   $$ sinkHandle fileH
   debugM logger $ "done setting up capture"
  
   return $ awaitForever
