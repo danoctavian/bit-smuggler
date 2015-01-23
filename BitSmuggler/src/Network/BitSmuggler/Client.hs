@@ -20,7 +20,7 @@ import Data.Conduit.List as DC
 
 import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature)
 
-import Network.BitSmuggler.Common hiding (logger)
+import Network.BitSmuggler.Common
 import Network.BitSmuggler.Crypto as Crypto
 import Network.BitSmuggler.Protocol
 import Network.BitSmuggler.Utils
@@ -42,8 +42,6 @@ server usecase.
 A proxy server could just be a peer with more bandwitdth
 and a better a machine to back it up.
 -}
-
-logger = "BitSmuggler.Client"
 
 data ClientConfig = ClientConfig {
     btClientConfig :: BTClientConfig
@@ -130,15 +128,21 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
 clientProxyInit handleConn pieceHs fileFix serverAddress direction local remote = do
 
   liftIO $ debugM logger $ "bittorrent client connects to remote " P.++ (show remote)
+  liftIO $ debugM logger $ "expected server address is " P.++ (show serverAddress)
 
-  if (fst remote == serverAddress)
+  if ((fst remote) == serverAddress)
   then do
+    liftIO $ debugM logger $ "it's a bitsmuggler connection. handle it. "
+
     forkIO $ handleConn
     streams <- fmap (if direction == Reverse then Tup.swap else P.id) $
                     makeStreams pieceHs fileFix
     return $ DataHooks { incoming = P.fst streams
                          , outgoing = P.snd streams 
-                         , onDisconnect = return () -- TODO: implement 
+                         , onDisconnect = do
+                             debugM logger "bitsmuggler connection disconnect occured."
+                             return ()
+                             -- TODO: implement 
                         }
 
   -- it's some other connection - just proxy data without any 
@@ -160,6 +164,9 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
 
   noGate <- newGate
   atomically $ openGate noGate
+
+  debugM logger "sending handshake message to the server..."
+
   -- send the first message (hanshake)
   DC.sourceList [Just $ ConnRequest repr (serverToken state)]
              =$ sendPipe packetSize (sendARQ noARQ)
@@ -167,6 +174,7 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
              $$ outgoingSink (read sendGetPiece) 
                              (\p -> write sendPutBack p) noGate
 
+  debugM logger "sent the handshake message to the server."
   if (prevToken == Nothing) then do -- first time connecting
     serverResponse <- liftIO $ atomically $ readTQueue (pipeRecv control)
     case serverResponse of

@@ -14,7 +14,6 @@ module Network.BitSmuggler.Common (
   , ProxyDir (..)
   , startProxies
   , addTorrents
-  , logger
   , makeRandPartial
 ) where
 
@@ -65,8 +64,6 @@ import Network.TCP.Proxy.Socks4 as Socks4
 bitsmuggler functionality common between client and server
 
 -}
-
-logger = "BitSmuggler.common"
 
 data ConnData = ConnData {
     connSend :: ByteString -> IO ()

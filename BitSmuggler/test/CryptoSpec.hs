@@ -23,32 +23,31 @@ main = hspec spec
 
 spec :: Spec
 spec = do
-
   describe "handshake" $ do
     it "handshake created by client is understandable by server" $ 
-      property $ checkHandshake 
+      property $ serverDecryptsHandshake
 
   describe "encryption-decryption" $ do
     it "encrypted message matches decrypted" $ 
-      property $ checkEncryptDecrypt
+      property $ encryptedMatchesDecrypted 
   return ()
 
-checkHandshake :: ArbByteString -> ArbByteString  -> Bool
-checkHandshake abs entropySeed = isJust readHandshake && (P.snd $ fromJust readHandshake) == message
+serverDecryptsHandshake :: ArbByteString -> Bool
+serverDecryptsHandshake abs = isJust readHandshake && (P.snd $ fromJust readHandshake) == message
   where
     message = fromABS abs
     readHandshake = tryReadHandshake serverSkWord handshakeCipher
     handshakeCipher = encryptHandshake (clientCrypto, repr) iv message
-    ((clientCrypto, repr), (_, serverSkWord), iv) = cryptoFromSeed $ fromABS entropySeed
+    ((clientCrypto, repr), (_, serverSkWord), iv) = cryptoFromSeed "le fixed seed" -- $ fromABS entropySeed
 
 
-checkEncryptDecrypt :: ArbByteString -> ArbByteString -> Bool
-checkEncryptDecrypt abs entropySeed
+encryptedMatchesDecrypted :: ArbByteString -> Bool
+encryptedMatchesDecrypted abs
   = decrypt serverCrypto (encrypt clientCrypto iv message) == Just message
     && decrypt clientCrypto (encrypt serverCrypto iv message) == Just message
     where
       message = fromABS abs
-      ((clientCrypto, _), (serverCrypto, _), iv) = cryptoFromSeed $ fromABS entropySeed
+      ((clientCrypto, _), (serverCrypto, _), iv) = cryptoFromSeed "FIXED" -- $ fromABS entropySeed
       
 
 -- sets up the encrypt/decrypt functions and vals to test 1 encrypt-decrypt

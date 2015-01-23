@@ -8,7 +8,6 @@ module Network.BitSmuggler.BitTorrentSimulator (
   , clientConn
   , NetworkChunk (..)
   , ConnectionData (..)
-  , logger
   )where
 
 import Prelude as P
@@ -67,8 +66,6 @@ import qualified Network.BitSmuggler.TorrentClientProc as Proc
 
    NON-DEFENSIVE programming - this code crashes if not given right input - it's only used for testing to it needen't be robust    
 -}
-
-logger = "BitTorrentSimulator"
 
 -- RPC aspects
 rpcmod = "bittorrent"

@@ -25,6 +25,7 @@ module Network.BitSmuggler.Utils (
   , BitSmugglerException (..)
   , hoistMaybe
   , toLazy
+  , logger
 ) where
 
 import Data.Typeable
@@ -51,6 +52,9 @@ import Control.Retry
 import qualified Control.Monad.Catch as Catch
 import Network.BitTorrent.ClientControl (PortNum, InfoHash)
 
+-- bitsmuggler logger
+
+logger = "BitSmuggler-logger"
 
 -- exceptions 
 

@@ -21,13 +21,13 @@ import Control.Concurrent.STM
 import Control.Monad.IO.Class
 import Control.Concurrent.Async
 import Crypto.Random
+import System.Log.Logger
 
 import Network.BitSmuggler.Crypto as Crypto
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.BitTorrentParser as BT
 import Network.BitSmuggler.ARQ
 import Network.BitSmuggler.Common
-
 
 {-
 
@@ -53,6 +53,7 @@ handling data streams
     Eg.: some clever way of taking a piece of cyphertext and making it
     match the distribution properties of a video codec.
 -}
+
 blockSize :: Int
 blockSize = 16 * 1024 
 
@@ -83,6 +84,7 @@ msgSource controlSend userSend = forever $ do
 
 readSource read = forever $ do
   item <- read
+  lift $ debugM logger "incoming piece from the other side"
   DC.yield item
 
 -- filter messages into control and data
@@ -119,8 +121,12 @@ encryptPipe encrypt = concatMapAccum
 -}
 outgoingSink getPiece putBack dataGate = do
   -- get a piece as it's about to leave the local bt client
+  lift $ debugM logger "######## going through data gatgoing through data gatee" 
   lift $ atomically $ goThroughGate dataGate
+  lift $ debugM logger "######## waiting for a piece" 
+
   piece <- lift getPiece
+  lift $ debugM logger "a piece is outgoing" 
   upstream <- await 
   case upstream of
     (Just maybePayload) -> do
@@ -275,10 +281,14 @@ recvStream getBlockLoader putRecv readIH
   = chunkStream (loop . hsInfoHash) ((liftIO $ readIH) >>= loop)
     where
       loop ih = do
+        liftIO $ debugM logger $ " *** the stream has infohash " P.++ (show ih)
         maybeFixPiece <- liftIO $ getBlockLoader ih
         case maybeFixPiece of
-          Nothing -> awaitForever (\m -> DC.yield m) -- just proxy stuff
-          Just loadBlock ->
+          Nothing -> do
+            liftIO $ debugM logger " ***there's no piece fixer. just proxy things"
+            awaitForever (\m -> DC.yield m) -- just proxy stuff
+          Just loadBlock -> do
+            liftIO $ debugM logger "*** receiving bitsmuggler tampered-pieces"
             awaitForPiece $ \piece -> do
                               putRecv $ block piece
                               -- TODO: don't fix it if it ain't broken

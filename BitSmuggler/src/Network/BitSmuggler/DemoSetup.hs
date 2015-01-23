@@ -21,6 +21,7 @@ import System.Log.Logger
 import Data.Conduit.Binary as DC
 
 import Network.BitSmuggler.Common as Common
+import Network.BitSmuggler.Common as Protocol
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.TorrentFile
 import Network.BitSmuggler.Crypto as Crypto
@@ -28,8 +29,6 @@ import Network.BitSmuggler.BitTorrentSimulator as Sim
 import Network.BitSmuggler.Server as Server
 import Network.BitSmuggler.Client as Client
 import Network.BitSmuggler.FileCache as Cache
-
-logger = "fakeClientTest"
 
 setupFileCache = do
   contact <- makeContactFile
@@ -41,12 +40,12 @@ setupFileCache = do
 
 
 runDemoClient = do
-  updateGlobalLogger Client.logger  (setLevel DEBUG)
-  updateGlobalLogger Sim.logger  (setLevel DEBUG)
-  updateGlobalLogger Common.logger  (setLevel DEBUG)
-
+  updateGlobalLogger logger  (setLevel DEBUG)
 
   contact <- makeContactFile
+
+  debugM logger $ "the contact file's infohash is " P.++ (show $ infoHash contact)
+
   (serverDesc, _) <- makeServerDescriptor contact
 
   let connData = ConnectionData {
@@ -67,11 +66,14 @@ runDemoClient = do
     P.putStrLn $ show response
 
 runDemoServer = do
-  updateGlobalLogger Server.logger  (setLevel DEBUG)
-  updateGlobalLogger Sim.logger  (setLevel DEBUG)
-  updateGlobalLogger Common.logger  (setLevel DEBUG)
+  updateGlobalLogger logger  (setLevel DEBUG)
 
   contact <- makeContactFile
+
+  -- the stream has 1156258573216559082388624324876499110422886733169
+  -- this has 1422293912806317530710726412509278710035024148095
+  debugM logger $ "the contact file's infohash is " P.++ (show $ infoHash contact)
+
   (serverDesc, sk) <- makeServerDescriptor contact
 
   proc <- simulatorProc serverBTRoot Map.empty streamFile
@@ -81,8 +83,6 @@ runDemoServer = do
     message <- connRecv c
     P.putStrLn $ show message
     connSend c "hello from server"
-
-    
 
 root = "/home/dan/repos/bitSmuggler/bit-smuggler/demo"
 

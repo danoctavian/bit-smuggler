@@ -28,7 +28,7 @@ import Data.Tuple as Tup
 import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature)
 import Network.TCP.Proxy.Socks4 as Socks4
 
-import Network.BitSmuggler.Common hiding (contactFiles, logger)
+import Network.BitSmuggler.Common hiding (contactFiles)
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.Protocol
 import Network.BitSmuggler.ARQ as ARQ
@@ -44,9 +44,6 @@ run single torrent client - running many potentially blows the cover
  some torrent client
 
 -}
-
-logger = "BitSmuggler.Server"
-
 
 data ServerConfig = ServerConfig {
     serverSecretKey :: Key
@@ -134,6 +131,9 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
 
   let noarq = noARQ -- there's no ARQ right now
   let packetSize = blockSize - Crypto.msgHeaderLen
+
+  liftIO $ debugM logger $ "waiting for handshake message"
+
   [fstClientMessage] <-
     runConduit $ (readSource (liftIO $ read $ recvPiece pieceHooks))
                =$ (recvPipe (recvARQ noarq) $ handshakeDecrypt secretKey) =$ DC.take 1
