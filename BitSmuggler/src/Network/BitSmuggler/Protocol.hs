@@ -1,4 +1,6 @@
 {-# LANGUAGE LambdaCase, RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 module Network.BitSmuggler.Protocol where
 
 import Prelude as P hiding (read)
@@ -22,10 +24,12 @@ import Control.Monad.IO.Class
 import Control.Concurrent.Async
 import Crypto.Random
 import System.Log.Logger
+import System.IO.Unsafe -- tODO: please for the love of god remove this
 
 import Network.BitSmuggler.Crypto as Crypto
 import Network.BitSmuggler.Utils
-import Network.BitSmuggler.BitTorrentParser as BT
+import qualified Network.BitSmuggler.BitTorrentParser as BT
+
 import Network.BitSmuggler.ARQ
 import Network.BitSmuggler.Common
 
@@ -136,7 +140,7 @@ outgoingSink getPiece putBack dataGate = do
       outgoingSink getPiece putBack dataGate
     Nothing -> return ()
 
-isolateAndPad :: Monad m => Int -> Conduit (Maybe BS.ByteString) m (Maybe BS.ByteString)
+-- isolateAndPad :: Monad m => Int -> Conduit (Maybe BS.ByteString) m (Maybe BS.ByteString)
 isolateAndPad n = forever $ do
   bytes <- fmap BS.concat $ isolateWhileSmth n =$ DC.consume
   yield $ if (BS.length bytes > 0) then Just $ pad bytes n padding else Nothing
@@ -190,11 +194,15 @@ type SessionToken = ByteString
 tokenLen = 64 -- bytes
 
 -- the messages sent on the wire in their most general form
-data WireMessage a = Data ByteString | Control a
+data WireMessage a = Data ByteString | Control a 
+  deriving (Eq, Show)
 
 data ServerMessage = AcceptConn SessionToken | RejectConn
+  deriving (Eq, Show)
 
 data ClientMessage = ConnRequest ByteString (Maybe SessionToken)
+  deriving (Eq, Show)
+
 
 -- TODO: replace the following with automatic derivation of Serialize
 instance Serialize ServerMessage where
@@ -262,21 +270,21 @@ makeStreams (PieceHooks {..}) getFileFixer = do
                                    (liftIO $ read sendPutBack)
                                    (liftIO . (write sharedIH)))
 
-btStreamHandler transform = conduitGet (get :: Get StreamChunk)
+btStreamHandler transform = conduitGet (get :: Get BT.StreamChunk)
                           =$ transform
-                          =$ conduitPut (put :: Putter StreamChunk)
+                          =$ conduitPut (put :: Putter BT.StreamChunk)
 
-type LoadBlock = (Int, Block) -> ByteString 
+type LoadBlock = (Int, BT.Block) -> ByteString 
 
 sendStream putPiece getPiece notifyIH
   = chunkStream (\hs -> (notifyIH $ hsInfoHash hs) >> loop) loop
     where
-      loop = awaitForPiece $ \p -> putPiece (block p)
-                                   >> fmap (\b -> p {block = b}) getPiece 
+      loop = awaitForPiece $ \p -> putPiece (BT.block p)
+                                   >> fmap (\b -> p {BT.block = b}) getPiece 
 
 recvStream :: (InfoHash -> IO (Maybe LoadBlock))
               -> (ByteString -> IO ()) -> (IO InfoHash)
-              -> ConduitM StreamChunk StreamChunk IO ()
+              -> ConduitM BT.StreamChunk BT.StreamChunk IO ()
 recvStream getBlockLoader putRecv readIH
   = chunkStream (loop . hsInfoHash) ((liftIO $ readIH) >>= loop)
     where
@@ -290,32 +298,32 @@ recvStream getBlockLoader putRecv readIH
           Just loadBlock -> do
             liftIO $ debugM logger "*** receiving bitsmuggler tampered-pieces"
             awaitForPiece $ \piece -> do
-                              putRecv $ block piece
+                              putRecv $ BT.block piece
                               -- TODO: don't fix it if it ain't broken
                                -- pieces that are not tampered with should not be fixed
                               return $ fixPiece piece loadBlock
 
-fixPiece p@(Piece {..}) loadBlock =
-  let goodBlock = loadBlock (index, Block {blockOffset = begin,
-                                        blockSize  = BS.length block})
-  in p {block = goodBlock}
+fixPiece p@(BT.Piece {..}) loadBlock =
+  let goodBlock = loadBlock (index, BT.Block {BT.blockOffset = begin,
+                                        BT.blockSize  = BS.length block})
+  in p {BT.block = goodBlock}
 
 
 chunkStream onHandshake otherwise = do
   upstream <- await
   case upstream of
-    Just hs@(HandShake _ _ _) -> leftover hs >> onHandshake hs
+    Just hs@(BT.HandShake _ _ _) -> leftover hs >> onHandshake hs
     Just other -> leftover other >> otherwise
     Nothing -> return ()
 
-hsInfoHash (HandShake _ ih _) = ih
+hsInfoHash (BT.HandShake _ ih _) = ih
 
 awaitForPiece :: (BT.Message -> IO BT.Message) 
-              -> (ConduitM StreamChunk StreamChunk IO ())
+              -> (ConduitM BT.StreamChunk BT.StreamChunk IO ())
 awaitForPiece f
   = awaitForever
       (\case
-        (MsgChunk sz p@(Piece {..})) -> (liftIO $ f p) >>= DC.yield . (MsgChunk sz)
+        (BT.MsgChunk sz p@(BT.Piece {..})) -> (liftIO $ f p) >>= DC.yield . (BT.MsgChunk sz)
         other -> DC.yield other)
 
 -- conduit extras

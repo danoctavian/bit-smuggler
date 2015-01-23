@@ -106,6 +106,9 @@ Test-Suite spec
     Other-modules:
       FileCacheSpec
       TorrentFileSpec
+      CryptoSpec
+      ProtocolSpec
+
     Hs-Source-Dirs:  test, .
     Type:            exitcode-stdio-1.0
 

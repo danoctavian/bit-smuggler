@@ -151,8 +151,12 @@ createContactFile contactFile cache dir =
         pieces <- hashPieces [dataFile] (fromIntegral tLength)
         return $ torrentFile {tInfo = sf {tPieces = BSL.fromChunks pieces}}
         else return torrentFile
+
+{-
+      TODO: fix computeInfoHash and bring back this section of code
       let computedIH = fromRight $ DS.decode $ computeInfoHash tFileContent
       when (computedIH /= infoHash) $ throwIO TorrentFileIntegrityFail
+-}
 
       return (infoHash, (dataFile, tFileContent))
 

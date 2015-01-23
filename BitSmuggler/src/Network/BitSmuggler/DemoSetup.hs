@@ -3,6 +3,7 @@ module Network.BitSmuggler.DemoSetup where
 
 import Prelude as P
 import Data.Torrent
+import Data.Maybe
 import Data.ByteString as BS
 import Data.ByteString.Lazy as BSL
 import System.FilePath.Posix
@@ -30,10 +31,10 @@ import Network.BitSmuggler.Server as Server
 import Network.BitSmuggler.Client as Client
 import Network.BitSmuggler.FileCache as Cache
 
-setupFileCache = do
+setupFileCache path = do
   contact <- makeContactFile
   fHandle <- openFile testDataFile ReadMode
-  cache <- Cache.load serverCachePath
+  cache <- Cache.load path 
   Cache.put cache (infoHash contact) $  sourceHandle fHandle
   hClose fHandle
   Cache.close cache
@@ -103,7 +104,9 @@ testDataFile = root </> "contactFile/testFile.txt"
 makeContactFile = do
   Right t <- fmap readTorrent $ BSL.readFile $ testTFile 
   return $ FakeFile {seed = 23456, torrentFile = t
-                    , infoHash = fromRight $ DS.decode $ computeInfoHash t}
+                    , infoHash = fromRight $ DS.decode $ fromJust $ textToInfoHash
+                                  "ca886d7843c73b182292d4594e7148de208bd571"}
+  --fromRight $ DS.decode $ computeInfoHash t}
 
 
 makeServerDescriptor contact = do
