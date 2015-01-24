@@ -263,14 +263,15 @@ makeStreams (PieceHooks {..}) getFileFixer = do
   -- in the case in which the send thread learns about it
   notifyIH <- newEmptyTMVarIO 
   let sharedIH = stmShared takeTMVar putTMVar notifyIH
-  return $ (btStreamHandler $ recvStream getFileFixer
+  return $ ( (DC.mapM (\ch -> (liftIO $ debugM logger "chunk coming in") >> return ch)) =$ (btStreamHandler $ recvStream getFileFixer 
                                    (write recvPiece)
-                                   (read sharedIH)
+                                   (read sharedIH))
            , btStreamHandler $ sendStream (liftIO . (write sendGetPiece))
                                    (liftIO $ read sendPutBack)
                                    (liftIO . (write sharedIH)))
 
 btStreamHandler transform = conduitGet (get :: Get BT.StreamChunk)
+                          
                           =$ transform
                           =$ conduitPut (put :: Putter BT.StreamChunk)
 
@@ -299,6 +300,8 @@ recvStream getBlockLoader putRecv readIH
             liftIO $ debugM logger "*** receiving bitsmuggler tampered-pieces"
             awaitForPiece $ \piece -> do
                               putRecv $ BT.block piece
+                              liftIO $ debugM logger "%%%%%% piece sent down the pipe"
+
                               -- TODO: don't fix it if it ain't broken
                                -- pieces that are not tampered with should not be fixed
                               return $ fixPiece piece loadBlock
@@ -370,6 +373,5 @@ goThroughGate g = readTMVar g
 -- these block if the gate is already in the right state open/closed
 openGate g = putTMVar g ()
 closeGate g = takeTMVar g
-
 
 

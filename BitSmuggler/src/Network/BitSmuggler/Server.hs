@@ -118,7 +118,8 @@ serverConnInit secretKey stateVar handleConn fileFix direction local remote = do
                 makeStreams pieceHs fileFix
   return $ DataHooks { incoming = P.fst streams
                      , outgoing = P.snd streams
-                     , onDisconnect = return () -- TODO: implement 
+                        -- TODO: implement 
+                     , onDisconnect = debugM logger "!! DISCONNECT" >> return () 
                     } 
 
 

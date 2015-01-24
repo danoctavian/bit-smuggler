@@ -25,6 +25,8 @@ import Data.Maybe
 
 import Network.BitSmuggler.TorrentFile as TF
 import Network.BitSmuggler.BitTorrentParser as BT
+import qualified Network.BitSmuggler.Protocol as Proto
+
 
 
 main :: IO ()
@@ -37,9 +39,25 @@ dataFileSmallTFile = "test-data/randFileSmall.torrent"
 
 dataFileMediumTFile = "test-data/testFile.torrent"
 
+torrentStream = "test-data/seedClientCapture"
+
+
 
 spec :: Spec
 spec = do
+
+  describe "BitTorrentParser" $ do
+    it "parses the right number of pieces" $ do
+      -- this test is pretty weak. consider for removal 
+      (Right torrentFile) <- fmap readTorrent $ BSL.readFile dataFileSmallTFile
+      let tinfo = tInfo $ torrentFile
+      let pieceCount = divCeiling (tLength tinfo) (tPieceLength tinfo)
+      chunks <- runResourceT $ sourceFile torrentStream 
+              =$ conduitGet (get :: Get StreamChunk) $$ DCL.consume
+      ((P.length $ P.filter isPiece $ chunks)
+        >= (divCeiling (tPieceLength tinfo) Proto.blockSize) * (pieceCount - 1))
+        `shouldBe` True
+
   describe "hashPieces" $ do
     it "matches piece hashes in model torrent file" $ do
       (Right torrentFile) <- fmap readTorrent $ BSL.readFile dataFileSmallTFile
@@ -63,12 +81,11 @@ spec = do
 
   describe "makeBlockLoader" $ do
     it "loads the same blocks as the ones streamed in a bittorrent session" $ do
-      let torrentStream = "test-data/seedClientCapture"
       (Right torrentFile) <- fmap readTorrent $ BSL.readFile dataFileSmallTFile
       blockLoad <- makeBlockLoader (tInfo torrentFile) dataFileSmall
       chunks <- runResourceT $ sourceFile torrentStream 
               =$ conduitGet (get :: Get StreamChunk) $$ DCL.consume
-      let justPieces = P.filter isPiece $ P.drop 0 chunks 
+      let justPieces = P.filter isPiece $ chunks 
       (P.length justPieces >= 1) `shouldBe` True
       sames <- forM justPieces $ \(MsgChunk _ p) -> do
         return $ blockLoad (fromIntegral $ BT.index p, Block {blockOffset = begin p,
@@ -78,4 +95,4 @@ spec = do
         
   return ()
 
-
+divCeiling x y = ceiling $ (fromIntegral x) / (fromIntegral y)
