@@ -225,8 +225,6 @@ instance (Serialize a) => Serialize (WireMessage a) where
   get =   (byte 0 *> (Data <$> getRemaining))
       <|> (byte 1 *> (Control <$> get)) 
 
-
-
 -- encodes a custom serializable msg
 encodeMsg :: Serialize a => a -> ByteString
 encodeMsg = runPut . putMsg . DS.encode
@@ -235,7 +233,6 @@ encodeMsg = runPut . putMsg . DS.encode
 -- with a constant header (msgHead)
 putMsg m = putWord8 msgHead >> putWord32le (fromIntegral $ BS.length m) >> putByteString m
 getMsg = byte msgHead >> getWord32le >>= getBytes . fromIntegral
-
 
 
 -- bittorrent stream handlers
@@ -263,7 +260,7 @@ makeStreams (PieceHooks {..}) getFileFixer = do
   -- in the case in which the send thread learns about it
   notifyIH <- newEmptyTMVarIO 
   let sharedIH = stmShared takeTMVar putTMVar notifyIH
-  return $ ( (DC.mapM (\ch -> (liftIO $ debugM logger "chunk coming in") >> return ch)) =$ (btStreamHandler $ recvStream getFileFixer 
+  return $ ((btStreamHandler $ recvStream getFileFixer 
                                    (write recvPiece)
                                    (read sharedIH))
            , btStreamHandler $ sendStream (liftIO . (write sendGetPiece))
@@ -280,8 +277,13 @@ type LoadBlock = (Int, BT.Block) -> ByteString
 sendStream putPiece getPiece notifyIH
   = chunkStream (\hs -> (notifyIH $ hsInfoHash hs) >> loop) loop
     where
-      loop = awaitForPiece $ \p -> putPiece (BT.block p)
-                                   >> fmap (\b -> p {BT.block = b}) getPiece 
+      loop = awaitForPiece $ \p -> do
+               putPiece (BT.block p)
+               updatedP <- getPiece 
+               when (BS.length updatedP /= BS.length (BT.block p)) $ do
+                 errorM logger $ "FATAL wrongly constructed piece it's length is actually " P.++ (show $ BS.length updatedP)
+                 throwIO UnexpectedError                   
+               return $ (\b -> p {BT.block = b}) updatedP
 
 recvStream :: (InfoHash -> IO (Maybe LoadBlock))
               -> (ByteString -> IO ()) -> (IO InfoHash)

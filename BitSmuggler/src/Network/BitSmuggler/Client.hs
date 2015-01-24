@@ -169,7 +169,7 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
 
   -- send the first message (hanshake)
   DC.sourceList [Just $ ConnRequest repr (serverToken state)]
-             =$ sendPipe packetSize (sendARQ noARQ)
+             =$ sendPipe (packetSize - Crypto.keySize) (sendARQ noARQ)
                   (encrypter (encryptHandshake (cryptoOps, repr)) cprg)
              $$ outgoingSink (read sendGetPiece) 
                              (\p -> write sendPutBack p) noGate

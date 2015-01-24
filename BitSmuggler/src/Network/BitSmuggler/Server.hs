@@ -138,6 +138,9 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
   [fstClientMessage] <-
     runConduit $ (readSource (liftIO $ read $ recvPiece pieceHooks))
                =$ (recvPipe (recvARQ noarq) $ handshakeDecrypt secretKey) =$ DC.take 1
+
+  liftIO $ debugM logger $ "received first message  from client !"
+
   case fstClientMessage of
     (ConnRequest keyRepr Nothing) -> do
       -- client is requesting the creation of a new session
