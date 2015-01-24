@@ -168,7 +168,7 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
   debugM logger "sending handshake message to the server..."
 
   -- send the first message (hanshake)
-  DC.sourceList [Just $ ConnRequest repr (serverToken state)]
+  DC.sourceList [Just $ Control $ ConnRequest repr (serverToken state)]
              =$ sendPipe (packetSize - Crypto.keySize) (sendARQ noARQ)
                   (encrypter (encryptHandshake (cryptoOps, repr)) cprg)
              $$ outgoingSink (read sendGetPiece) 

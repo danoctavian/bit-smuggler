@@ -213,9 +213,8 @@ instance Serialize ServerMessage where
         <|> (byte 1 *> return RejectConn)
 
 
-
 instance Serialize ClientMessage where
-  put (ConnRequest k maybeToken) = putWord8 0 >> put k >> put maybeToken
+  put (ConnRequest k maybeToken) = putWord8 0 >> putByteString k >> put maybeToken
   get = (byte 0 *> (ConnRequest <$> getBytes Crypto.keySize <*> get))
 
 
@@ -375,5 +374,4 @@ goThroughGate g = readTMVar g
 -- these block if the gate is already in the right state open/closed
 openGate g = putTMVar g ()
 closeGate g = takeTMVar g
-
 

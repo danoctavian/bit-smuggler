@@ -135,6 +135,8 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
 
   liftIO $ debugM logger $ "waiting for handshake message"
 
+ -- (DC.mapM (\bs -> debugM logger ("arqued packet" P.++ show bs ) >> return bs) 
+
   [fstClientMessage] <-
     runConduit $ (readSource (liftIO $ read $ recvPiece pieceHooks))
                =$ (recvPipe (recvARQ noarq) $ handshakeDecrypt secretKey) =$ DC.take 1
@@ -142,7 +144,7 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
   liftIO $ debugM logger $ "received first message  from client !"
 
   case fstClientMessage of
-    (ConnRequest keyRepr Nothing) -> do
+    (Control (ConnRequest keyRepr Nothing)) -> do
       -- client is requesting the creation of a new session
 
       liftIO $ debugM logger $ "client requests new session "
@@ -172,7 +174,7 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
                  stateVar
       return ()     
 
-    (ConnRequest keyRepr (Just token)) -> do
+    Control (ConnRequest keyRepr (Just token)) -> do
       -- client is requesting session recovery using token
       maybeConn <- atomically $ fmap (Map.lookup token . activeConns) $ readTVar stateVar
       case maybeConn of
