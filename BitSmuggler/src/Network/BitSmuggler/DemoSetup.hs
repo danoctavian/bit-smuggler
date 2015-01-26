@@ -19,6 +19,8 @@ import qualified Network.BitTorrent.ClientControl as BT
 import System.IO
 import System.Log.Logger
 import Control.Concurrent
+import Control.Concurrent.Async
+import Control.Exception.Base
 
 import Data.Conduit.Binary as DC
 
@@ -40,6 +42,19 @@ setupFileCache path = do
   hClose fHandle
   Cache.close cache
 
+
+-- does it work ?
+runFullDemo = do
+  server <- async $ runDemoServer
+  threadDelay $ 10 ^ 6 * 5
+  client <- async $ runDemoClient
+
+  waitBoth server client
+  debugM logger "finished demo"
+  return ()
+
+
+bigChunk = BS.concat [BS.replicate (10 ^ 4) 39, BS.replicate (10 ^ 4) 40]
 
 runDemoClient = do
   updateGlobalLogger logger  (setLevel DEBUG)
@@ -67,6 +82,10 @@ runDemoClient = do
     connSend c "hello from client"
     response <- connRecv c
     infoM logger $ show response
+    connSend c bigChunk
+    bigBlock <- connRecv c
+    assert (bigBlock == bigChunk) (return ())
+    debugM logger "client received big chunk succesfully"
     threadDelay $ 10 ^ 8
 
 runDemoServer = do
@@ -88,6 +107,10 @@ runDemoServer = do
     message <- connRecv c
     P.putStrLn $ show message
     connSend c "hello from server"
+    bigBlock <- connRecv c
+    assert (bigBlock == bigChunk) (return ())
+    debugM logger "server received big chunk succesfully"
+    connSend c bigChunk
     threadDelay $ 10 ^ 8
 
 root = "/home/dan/repos/bitSmuggler/bit-smuggler/demo"

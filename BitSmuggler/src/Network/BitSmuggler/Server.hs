@@ -135,8 +135,6 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
 
   liftIO $ debugM logger $ "waiting for handshake message"
 
- -- (DC.mapM (\bs -> debugM logger ("arqued packet" P.++ show bs ) >> return bs) 
-
   [fstClientMessage] <-
     runConduit $ (readSource (liftIO $ read $ recvPiece pieceHooks))
                =$ (recvPipe (recvARQ noarq) $ handshakeDecrypt secretKey) =$ DC.take 1

@@ -259,7 +259,6 @@ instance Serialize NetworkChunk where
 emitChunks cmdChan = go >> return () where
   go = runEitherT $ forever $ do
     liftIO $ threadDelay $ 5 * 10 ^ 5
-    liftIO $ debugM logger "$$$$ c'mon throw out a chunk.."
     maybeCmd <- liftIO $ atomically $ tryReadTChan cmdChan
     case maybeCmd of
       Just cmd -> takeCmd cmdChan cmd 

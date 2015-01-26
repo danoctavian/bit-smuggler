@@ -27,6 +27,7 @@ import Control.Concurrent.Async
 import Crypto.Random
 import System.Log.Logger
 import System.IO.Unsafe -- tODO: please for the love of god remove this
+import Control.Exception.Base
 
 import Network.BitSmuggler.Crypto as Crypto
 import Network.BitSmuggler.Utils
@@ -127,16 +128,11 @@ encryptPipe encrypt = concatMapAccum
 outgoingSink getPiece putBack dataGate = do
   -- get a piece as it's about to leave the local bt client
 
-  liftIO $ debugM logger "waiting at the data gate.."
   lift $ atomically $ goThroughGate dataGate
-  liftIO $ debugM logger "got through the BLACK GATE of data"
 
   piece <- lift getPiece
-  liftIO $ debugM logger "GOT DAT PIECE"
-
-  liftIO $ debugM logger "got a piece to send"
   upstream <- await 
-  liftIO $ debugM logger "got some data to store in it"
+
   case upstream of
     (Just maybePayload) -> do
       lift $ putBack $ case maybePayload of
@@ -145,7 +141,6 @@ outgoingSink getPiece putBack dataGate = do
       outgoingSink getPiece putBack dataGate
     Nothing -> do
       lift $ putBack piece -- put back piece unharmed
-      liftIO $ debugM logger "terminate the outgoing sink"
       return () -- terminate sink
 
 -- isolateAndPad :: Monad m => Int -> Conduit (Maybe BS.ByteString) m (Maybe BS.ByteString)
@@ -290,16 +285,9 @@ sendStream putPiece getPiece notifyIH
   = chunkStream (\hs -> (notifyIH $ hsInfoHash hs) >> loop) loop
     where
       loop = awaitForPiece $ \p -> do
-               debugM logger "got a new piece coming in"
                putPiece (BT.block p)
-               debugM logger "waiting to get it back..."
                updatedP <- getPiece 
-               debugM logger "got it back!"
-               when (BS.length updatedP /= BS.length (BT.block p)) $ do
-                 errorM logger $ "FATAL wrongly constructed piece it's length is actually " P.++ (show $ BS.length updatedP)
-                 throwIO UnexpectedError                   
-               debugM logger "close cycle"
-
+               assert (BS.length updatedP == BS.length (BT.block p)) (return ())
                return $ (\b -> p {BT.block = b}) updatedP
 
 recvStream :: (InfoHash -> IO (Maybe LoadBlock))
@@ -318,9 +306,7 @@ recvStream getBlockLoader putRecv readIH
           Just loadBlock -> do
             liftIO $ debugM logger "*** receiving bitsmuggler tampered-pieces"
             awaitForPiece $ \piece -> do
-                              debugM logger "incoming piece!"
                               putRecv $ BT.block piece
-                              debugM logger "pushed that piece through..."
 
                               -- TODO: don't fix it if it ain't broken
                                -- pieces that are not tampered with should not be fixed
