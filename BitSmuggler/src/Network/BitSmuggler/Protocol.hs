@@ -124,11 +124,18 @@ encryptPipe encrypt = concatMapAccum
   if you have any payload from upstream to send, send it.
   if not pass back the piece unharmed.
 -}
-outgoingSink getPiece putBack dataGate = do
+outgoingSink getPiece putBack showState dataGate = do
   -- get a piece as it's about to leave the local bt client
-  lift $ atomically $ goThroughGate dataGate
 
+  liftIO $ debugM logger "waiting at the data gate.."
+  lift $ atomically $ goThroughGate dataGate
+  liftIO $ debugM logger "got through the BLACK GATE of data"
+
+  isE <- liftIO $ showState
+  liftIO $ debugM logger $ "am i trying t oget smth that is not there?" P.++ (show isE)
   piece <- lift getPiece
+  liftIO $ debugM logger "GOT DAT PIECE"
+
   liftIO $ debugM logger "got a piece to send"
   upstream <- await 
   liftIO $ debugM logger "got some data to store in it"
@@ -137,7 +144,7 @@ outgoingSink getPiece putBack dataGate = do
       lift $ putBack $ case maybePayload of
         (Just payload) -> payload 
         Nothing -> piece  -- move on, nothing to change
-      outgoingSink getPiece putBack dataGate
+      outgoingSink getPiece putBack showState dataGate
     Nothing -> do
       lift $ putBack piece -- put back piece unharmed
       liftIO $ debugM logger "terminate the outgoing sink"
@@ -185,7 +192,7 @@ launchPipes packetSize  arq encrypter decrypt
   allocLinkedAsync $ async
          $ (msgSource (pipeSend control) userSend)
          =$ sendPipe packetSize (sendARQ arq) encrypter
-         $$ outgoingSink (read sendGetPiece) (\p -> write sendPutBack p) allowData
+         $$ outgoingSink (read sendGetPiece) (\p -> write sendPutBack p) (showStateGetPiece ) allowData
 
   return $ Pipe userRecv userSend
 
@@ -248,6 +255,7 @@ data PieceHooks = PieceHooks {
     recvPiece :: SharedMem ByteString
   , sendGetPiece :: SharedMem ByteString
   , sendPutBack :: SharedMem ByteString
+  , showStateGetPiece :: IO Bool
 }
 
 -- a wrapper for shared memory (can be tvar, or tbqueue or whatever)
@@ -261,6 +269,7 @@ makePieceHooks = do
   return $ PieceHooks (stmShared readTQueue writeTQueue recv)
                       (stmShared takeTMVar putTMVar sendGet)
                       (stmShared takeTMVar putTMVar sendPut)
+                      (atomically $ isEmptyTMVar sendGet)
 
 makeStreams (PieceHooks {..}) getFileFixer = do
   -- a tmvar used to notify the recv thread of the infohash of the stream
@@ -272,6 +281,7 @@ makeStreams (PieceHooks {..}) getFileFixer = do
                                    (read sharedIH))
            , btStreamHandler $ sendStream (liftIO . (write sendGetPiece))
                                    (liftIO $ read sendPutBack)
+                                   (liftIO $ showStateGetPiece)
                                    (liftIO . (write sharedIH)))
 
 btStreamHandler transform = conduitGet (get :: Get BT.StreamChunk)
@@ -281,15 +291,17 @@ btStreamHandler transform = conduitGet (get :: Get BT.StreamChunk)
 
 type LoadBlock = (Int, BT.Block) -> ByteString 
 
-sendStream putPiece getPiece notifyIH
+sendStream putPiece getPiece sendGetState notifyIH
   = chunkStream (\hs -> (notifyIH $ hsInfoHash hs) >> loop) loop
     where
       loop = awaitForPiece $ \p -> do
                debugM logger "got a new piece coming in"
                putPiece (BT.block p)
-               debugM logger "got a new piece coming in"
-
+               debugM logger "waiting to get it back..."
+               isEmpty <- sendGetState
+               debugM logger $ "the other thread doesn't have it? " P.++ (show isEmpty)
                updatedP <- getPiece 
+               debugM logger "got it back!"
                when (BS.length updatedP /= BS.length (BT.block p)) $ do
                  errorM logger $ "FATAL wrongly constructed piece it's length is actually " P.++ (show $ BS.length updatedP)
                  throwIO UnexpectedError                   
@@ -313,7 +325,10 @@ recvStream getBlockLoader putRecv readIH
           Just loadBlock -> do
             liftIO $ debugM logger "*** receiving bitsmuggler tampered-pieces"
             awaitForPiece $ \piece -> do
+                              debugM logger "incoming piece!"
                               putRecv $ BT.block piece
+                              debugM logger "pushed that piece through..."
+
                               -- TODO: don't fix it if it ain't broken
                                -- pieces that are not tampered with should not be fixed
                               return $ fixPiece piece loadBlock

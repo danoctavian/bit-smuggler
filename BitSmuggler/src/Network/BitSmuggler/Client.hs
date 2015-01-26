@@ -100,7 +100,6 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
      handle $ pipeToConnData userPipe
      atomically $ openGate exitGate -- signal termination
 
-
   clientState <- liftIO $ newTVarIO $ ClientState Nothing 
 
   let fileFixer = findPieceLoader [file]
@@ -175,7 +174,7 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
              =$ sendPipe (packetSize - Crypto.keySize) (DC.mapM $ \bs -> (liftIO $ debugM logger "outgoing stuff") >> return bs) -- (sendARQ noARQ)
                   (encrypter (encryptHandshake (cryptoOps, repr)) cprg)
              $$ outgoingSink (read sendGetPiece) 
-                             (\p -> write sendPutBack p) noGate
+                             (\p -> write sendPutBack p) (showStateGetPiece) noGate
 
   debugM logger "SENT the handshake message to the server."
   if (prevToken == Nothing) then do -- first time connecting
