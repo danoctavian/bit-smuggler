@@ -18,6 +18,7 @@ import Data.Binary as Bin
 import qualified Network.BitTorrent.ClientControl as BT
 import System.IO
 import System.Log.Logger
+import Control.Concurrent
 
 import Data.Conduit.Binary as DC
 
@@ -66,6 +67,7 @@ runDemoClient = do
     connSend c "hello from client"
     response <- connRecv c
     infoM logger $ show response
+    threadDelay $ 10 ^ 8
 
 runDemoServer = do
   updateGlobalLogger logger  (setLevel DEBUG)
@@ -86,6 +88,7 @@ runDemoServer = do
     message <- connRecv c
     P.putStrLn $ show message
     connSend c "hello from server"
+    threadDelay $ 10 ^ 8
 
 root = "/home/dan/repos/bitSmuggler/bit-smuggler/demo"
 
