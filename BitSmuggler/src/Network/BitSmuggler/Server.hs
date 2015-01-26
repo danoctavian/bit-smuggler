@@ -196,11 +196,15 @@ runConnection packetSize arq encrypter decrypt token userHandle ps@(DataPipes {.
   user <- launchPipes packetSize arq encrypter decrypt ps
   -- reply to handshake 
   -- accept. we don't discriminate.. for now
+
+  liftIO $ debugM logger $ "sending accept message to client"
+
   liftIO $ atomically $ writeTQueue (pipeSend controlPipe) $ AcceptConn token
 
   -- allowing data to flow
   liftIO $ atomically $ openGate dataGate
 
+  liftIO $ debugM logger $ "running the user conn handler"
   -- run conn handler
   liftIO $ userHandle $ pipeToConnData user
   return ()

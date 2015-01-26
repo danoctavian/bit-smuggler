@@ -22,6 +22,13 @@ spec = do
     it "send pipe fused with the recv pipe is the id function (roughly :) )" $ do
       property $ sendFuseRecvIsId
     return ()
+  describe "takeWhile" $ do
+    it "takes while :)" $ do
+      (runST (sourceList [Just "wtf"] $$ takeWhileSmth 2)) `shouldBe` (Just "wt")
+      (runST (sourceList [Nothing, Just "wtf"] $$ takeWhileSmth 2)) `shouldBe` (Just "")
+      (runST (sourceList [Just "omg", Just "wtf"] $$ takeWhileSmth 4)) `shouldBe` (Just "omgw")
+      (runST (sourceList [Just "jeez", Just "man"] $$ (takeWhileSmth 7 >> takeWhileSmth 1)))
+        `shouldBe` Nothing 
   return ()
 
 

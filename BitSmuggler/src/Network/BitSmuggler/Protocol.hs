@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase, RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Network.BitSmuggler.Protocol where
 
@@ -12,6 +13,7 @@ import Data.Conduit.Cereal
 import Data.Conduit as DC
 import Data.Conduit.List as DC
 import Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 import Data.Word
 import Control.Monad as CM
 import Control.Monad.Trans
@@ -88,7 +90,6 @@ msgSource controlSend userSend = forever $ do
 
 readSource read = forever $ do
   item <- read
-  lift $ debugM logger "incoming piece from the other side"
   DC.yield item
 
 -- filter messages into control and data
@@ -125,25 +126,32 @@ encryptPipe encrypt = concatMapAccum
 -}
 outgoingSink getPiece putBack dataGate = do
   -- get a piece as it's about to leave the local bt client
-  lift $ debugM logger "######## going through data gatgoing through data gatee" 
   lift $ atomically $ goThroughGate dataGate
-  lift $ debugM logger "######## waiting for a piece" 
 
   piece <- lift getPiece
-  lift $ debugM logger "a piece is outgoing" 
+  liftIO $ debugM logger "got a piece to send"
   upstream <- await 
+  liftIO $ debugM logger "got some data to store in it"
   case upstream of
     (Just maybePayload) -> do
       lift $ putBack $ case maybePayload of
         (Just payload) -> payload 
         Nothing -> piece  -- move on, nothing to change
       outgoingSink getPiece putBack dataGate
-    Nothing -> return ()
+    Nothing -> do
+      lift $ putBack piece -- put back piece unharmed
+      liftIO $ debugM logger "terminate the outgoing sink"
+      return () -- terminate sink
 
 -- isolateAndPad :: Monad m => Int -> Conduit (Maybe BS.ByteString) m (Maybe BS.ByteString)
-isolateAndPad n = forever $ do
-  bytes <- fmap BS.concat $ isolateWhileSmth n =$ DC.consume
-  yield $ if (BS.length bytes > 0) then Just $ pad bytes n padding else Nothing
+isolateAndPad n = do
+  maybeBytes <- takeWhileSmth n
+  case maybeBytes of 
+    Nothing -> return () -- terminate
+    Just lazyBytes -> do
+      let bytes = BSL.toStrict lazyBytes
+      yield $ if (BS.length bytes > 0) then Just $ pad bytes n padding else Nothing
+      isolateAndPad n
 
 pad bs targetLen padding = BS.concat [bs, BS.replicate (targetLen - BS.length bs) padding]
 
@@ -277,11 +285,16 @@ sendStream putPiece getPiece notifyIH
   = chunkStream (\hs -> (notifyIH $ hsInfoHash hs) >> loop) loop
     where
       loop = awaitForPiece $ \p -> do
+               debugM logger "got a new piece coming in"
                putPiece (BT.block p)
+               debugM logger "got a new piece coming in"
+
                updatedP <- getPiece 
                when (BS.length updatedP /= BS.length (BT.block p)) $ do
                  errorM logger $ "FATAL wrongly constructed piece it's length is actually " P.++ (show $ BS.length updatedP)
                  throwIO UnexpectedError                   
+               debugM logger "close cycle"
+
                return $ (\b -> p {BT.block = b}) updatedP
 
 recvStream :: (InfoHash -> IO (Maybe LoadBlock))
@@ -301,8 +314,6 @@ recvStream getBlockLoader putRecv readIH
             liftIO $ debugM logger "*** receiving bitsmuggler tampered-pieces"
             awaitForPiece $ \piece -> do
                               putRecv $ BT.block piece
-                              liftIO $ debugM logger "%%%%%% piece sent down the pipe"
-
                               -- TODO: don't fix it if it ain't broken
                                -- pieces that are not tampered with should not be fixed
                               return $ fixPiece piece loadBlock
@@ -332,27 +343,26 @@ awaitForPiece f
 
 -- conduit extras
 
--- isolate n bytes OR until Nothing is encountered
--- based on the code of 'isolate' from Data.Conduit.Binary
-isolateWhileSmth :: Monad m
-        => Int
-        -> Conduit (Maybe BS.ByteString) m BS.ByteString
-isolateWhileSmth =
-    loop
+-- take n bytes OR until Nothing is encountered
+-- based on the code of 'take' from Data.Conduit.Binary
+
+takeWhileSmth :: Monad m => Int -> Consumer (Maybe BS.ByteString) m (Maybe BSL.ByteString)
+takeWhileSmth  0 = return $ Just BSL.empty
+takeWhileSmth n0 = go n0 id
   where
-    loop 0 = return ()
-    loop count = do
-        mbs <- await
-        case mbs of
-            Nothing -> return ()
-            Just Nothing -> return ()
-            Just (Just bs) -> do
-                let (a, b) = BS.splitAt count bs
-                case count - BS.length a of
-                    0 -> do
-                        unless (BS.null b) $ leftover $ Just b
-                        DC.yield a
-                    count' -> assert (BS.null b) $ DC.yield a >> loop count'
+    go n front =
+        await >>= maybe (return $ bsToMaybe $ BSL.fromChunks $ front []) go'
+      where
+        go' mbs = case mbs of 
+          Nothing -> return $ Just $ BSL.fromChunks $ front []
+          Just bs -> case BS.length bs `compare` n of
+                LT -> go (n - BS.length bs) (front . (bs:))
+                EQ -> return $ Just $ BSL.fromChunks $ front [bs]
+                GT ->
+                    let (x, y) = BS.splitAt n bs
+                     in assert (not $ BS.null y) $ leftover (Just y) >> return (Just $ BSL.fromChunks $ front [x])
+
+bsToMaybe bs = if BSL.length bs == 0 then Nothing else (Just bs)
 
 -- cereal extras
 skipWhile p = do 

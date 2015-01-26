@@ -62,9 +62,10 @@ runDemoClient = do
 
   let btC = clientBTClientConfig {btProc = proc}
   Client.clientConnect (ClientConfig btC serverDesc serverCachePath) $ \c -> do
+    infoM logger "USER: sending the server a hello"
     connSend c "hello from client"
     response <- connRecv c
-    P.putStrLn $ show response
+    infoM logger $ show response
 
 runDemoServer = do
   updateGlobalLogger logger  (setLevel DEBUG)
@@ -81,6 +82,7 @@ runDemoServer = do
 
   let btC = serverBTClientConfig {btProc = proc}
   Server.listen (ServerConfig sk btC [contact] clientCachePath) $ \c -> do
+    infoM logger "USER: waiting for signs of life from client"
     message <- connRecv c
     P.putStrLn $ show message
     connSend c "hello from server"

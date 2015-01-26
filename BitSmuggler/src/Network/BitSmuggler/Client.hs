@@ -96,6 +96,7 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   -- (gate opens)
   allocLinkedAsync $ async $ do
      atomically $ goThroughGate userGate
+     debugM logger "starting user handler execution"
      handle $ pipeToConnData userPipe
      atomically $ openGate exitGate -- signal termination
 
@@ -168,13 +169,15 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
   debugM logger "sending handshake message to the server..."
 
   -- send the first message (hanshake)
+  -- the size of the block is smaller bc we need to make space for the
+  -- elligatored publick key of the client
   DC.sourceList [Just $ Control $ ConnRequest repr (serverToken state)]
-             =$ sendPipe (packetSize - Crypto.keySize) (sendARQ noARQ)
+             =$ sendPipe (packetSize - Crypto.keySize) (DC.mapM $ \bs -> (liftIO $ debugM logger "outgoing stuff") >> return bs) -- (sendARQ noARQ)
                   (encrypter (encryptHandshake (cryptoOps, repr)) cprg)
              $$ outgoingSink (read sendGetPiece) 
                              (\p -> write sendPutBack p) noGate
 
-  debugM logger "sent the handshake message to the server."
+  debugM logger "SENT the handshake message to the server."
   if (prevToken == Nothing) then do -- first time connecting
     serverResponse <- liftIO $ atomically $ readTQueue (pipeRecv control)
     case serverResponse of
@@ -182,6 +185,7 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
         liftIO $ debugM logger $ "connection to server succesful "
 
         atomically $ modifyTVar stateVar (\s -> s {serverToken = Just token}) 
+        atomically $ openGate dataGate 
         atomically $ openGate userGate -- start the user function
       RejectConn -> do
         errorM logger "connection rejected"
