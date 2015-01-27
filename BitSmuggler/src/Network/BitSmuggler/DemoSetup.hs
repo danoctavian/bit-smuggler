@@ -21,6 +21,7 @@ import System.Log.Logger
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception.Base
+import Control.Monad
 
 import Data.Conduit.Binary as DC
 
@@ -54,7 +55,9 @@ runFullDemo = do
   return ()
 
 
-bigChunk = BS.concat [BS.replicate (10 ^ 4) 39, BS.replicate (10 ^ 4) 40]
+chunks = [ BS.replicate 1000 99, BS.replicate (10 ^ 4)  200
+         , BS.concat [BS.replicate (10 ^ 4) 39, BS.replicate (10 ^ 4) 40]
+         , BS.replicate (10 ^ 4)  173]
 
 runDemoClient = do
   updateGlobalLogger logger  (setLevel DEBUG)
@@ -82,10 +85,11 @@ runDemoClient = do
     connSend c "hello from client"
     response <- connRecv c
     infoM logger $ show response
-    connSend c bigChunk
-    bigBlock <- connRecv c
-    assert (bigBlock == bigChunk) (return ())
-    debugM logger "client received big chunk succesfully"
+    forM chunks $ \chunk -> do
+      connSend c chunk 
+      bigBlock <- connRecv c
+      assert (bigBlock == chunk) (return ())
+      debugM logger "client received big chunk succesfully"
     threadDelay $ 10 ^ 8
 
 runDemoServer = do
@@ -107,10 +111,11 @@ runDemoServer = do
     message <- connRecv c
     P.putStrLn $ show message
     connSend c "hello from server"
-    bigBlock <- connRecv c
-    assert (bigBlock == bigChunk) (return ())
-    debugM logger "server received big chunk succesfully"
-    connSend c bigChunk
+    forM chunks $ \chunk -> do
+      bigBlock <- connRecv c
+      assert (bigBlock == chunk) (return ())
+      debugM logger "server received big chunk succesfully"
+      connSend c chunk 
     threadDelay $ 10 ^ 8
 
 root = "/home/dan/repos/bitSmuggler/bit-smuggler/demo"
