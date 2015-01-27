@@ -60,7 +60,7 @@ logger = "BitSmuggler-logger"
 
 -- TODO: move this to a more appropriate place
 data BitSmugglerException = UnsupportedFeature | TorrentFileIntegrityFail
-                          | ClientProtocolError | UnexpectedError
+                          | ClientProtocolError | PeerProtocolError 
   deriving (Show, Typeable)
 
 instance Exception BitSmugglerException

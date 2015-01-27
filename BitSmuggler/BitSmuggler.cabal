@@ -85,6 +85,7 @@ library
                      , random-extras >=0.19 && <0.20
                      , random-fu >=0.2.6 && <0.3
                      , random-source >=0.3 && <0.4
+                     , dequeue >=0.1.5 && <0.2
 --                     , derive >=2.5.18 && <2.6
   hs-source-dirs:      src
   default-language:    Haskell2010
