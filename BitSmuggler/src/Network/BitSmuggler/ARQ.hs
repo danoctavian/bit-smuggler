@@ -114,7 +114,6 @@ initGoBackNARQ clock packetSize name = do
     , recvARQ = awaitForever $ \raw -> do
         let msg = fromRight $ DS.decode raw
 
---        liftIO $ debugP name $ "got ack " P.++ (show $ ackNum msg)
         maybePacket <- liftIO $ atomically $ do
           state <- readTVar stateVar
           -- treat the ack
@@ -155,12 +154,10 @@ sendHook stateVar clock packetSize = do
                                      >> sendHook stateVar clock packetSize
     other -> do
       stateNow <- liftIO $ atomically $ readTVar stateVar
---      liftIO $ debugM logger $ "buffer is " P.++ (show $ buffer stateNow)
       upstream <- await
       case upstream of
         Nothing -> do -- upstream termination
           -- there's no proper termination for ARQ just leave it running forever
---          if (buffer stateNow == [] && isNothing other) then return () 
           DC.yield (fmap DS.encode $ other) >> loop 
         -- no user message available now; send any potential ARQ and loop
         (Just Nothing) -> DC.yield (fmap DS.encode other) >> loop 
@@ -211,14 +208,14 @@ endToEndTest leftData rightData medium = do
     endToEndConduit (rightData, rightClock, rightARQ) (leftClock, leftARQ)
         medium (sinkTQueue leftRecvQueue)
 
-  let expectedRight = M.catMaybes rightData 
-  let expectedLeft = M.catMaybes leftData
+  let expectedRight = M.catMaybes leftData
+  let expectedLeft = M.catMaybes rightData
+
 
   -- suck those messages out 
   (rightReceived, leftReceived) <- concurrently 
     (sourceTQueue rightRecvQueue $$ DC.take (P.length expectedRight))
     (sourceTQueue leftRecvQueue $$ DC.take (P.length expectedLeft))
-
 
   cancel leftToRight
   cancel rightToLeft
@@ -259,6 +256,6 @@ dropEveryNMedium n = go 200
 runARQTest = do
   updateGlobalLogger logger  (setLevel DEBUG)
   let sampleData = [Just "1", Nothing, Just "2", Just "3", Nothing, Just "4", Nothing, Nothing, Just "5", Just "6", Just "7", Just "8", Just "9", Just "10", Just "11", Nothing, Nothing, Nothing, Nothing, Just "12", Just "13", Just "14", Nothing, Nothing, Just "15", Just "16", Just "17", Just "18", Nothing, Just "19", Nothing, Nothing, Nothing, Just "20", Just "21", Nothing, Just "22", Just "23", Just "24", Just "25", Nothing, Nothing, Just "26", Nothing, Just "28", Nothing, Nothing, Just "29", Nothing, Nothing, Just "30", Just "31", Just "32", Nothing, Nothing]
-  let bigSample = sampleData --P.concat $ P.replicate 2 sampleData
-  
-  endToEndTest sampleData bigSample  (dropEveryNMedium 20) 
+  let bigSample = P.concat $ P.replicate 2 sampleData
+
+  endToEndTest sampleData bigSample (dropEveryNMedium 20) 
