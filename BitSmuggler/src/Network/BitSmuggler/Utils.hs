@@ -10,7 +10,8 @@ module Network.BitSmuggler.Utils (
   , fromRight
   , try'
   , if'
-  , sourceTChan
+  , sourceTQueue
+  , sinkTQueue
   , alwaysRetry
   , allocAsync
   , allocLinkedAsync
@@ -134,8 +135,12 @@ if' c a b = if c then a else b
 
 -- conduit
 
-sourceTChan :: MonadIO m => TChan a -> Source m a
-sourceTChan chan = forever $ (liftIO $ atomically $ readTChan chan) >>= DC.yield
+sourceTQueue :: MonadIO m => TQueue a -> Source m a
+sourceTQueue chan = forever $ (liftIO $ atomically $ readTQueue chan) >>= DC.yield
+
+sinkTQueue :: MonadIO m => TQueue a -> Sink a m ()
+sinkTQueue queue = awaitForever (\item -> liftIO $ atomically $ writeTQueue queue item)
+
 
 -- PortNum from Network.Socket always assumes that whatever value
 -- passed into the constructor is a big-endian (newtwork byte order)
