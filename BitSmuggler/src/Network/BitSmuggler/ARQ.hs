@@ -258,5 +258,7 @@ dropEveryNMedium n = go 200
 
 runARQTest = do
   updateGlobalLogger logger  (setLevel DEBUG)
-  let sampleData = [Just "1", Nothing, Just "2", Just "3", Nothing, Just "4"]
-  endToEndTest sampleData sampleData (dropEveryNMedium 200) 
+  let sampleData = [Just "1", Nothing, Just "2", Just "3", Nothing, Just "4", Nothing, Nothing, Just "5", Just "6", Just "7", Just "8", Just "9", Just "10", Just "11", Nothing, Nothing, Nothing, Nothing, Just "12", Just "13", Just "14", Nothing, Nothing, Just "15", Just "16", Just "17", Just "18", Nothing, Just "19", Nothing, Nothing, Nothing, Just "20", Just "21", Nothing, Just "22", Just "23", Just "24", Just "25", Nothing, Nothing, Just "26", Nothing, Just "28", Nothing, Nothing, Just "29", Nothing, Nothing, Just "30", Just "31", Just "32", Nothing, Nothing]
+  let bigSample = sampleData --P.concat $ P.replicate 2 sampleData
+  
+  endToEndTest sampleData bigSample  (dropEveryNMedium 20) 
