@@ -2,7 +2,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 
-module Network.BitSmuggler.ARQ where
+module Network.BitSmuggler.ARQ (
+    recvARQ
+  , sendARQ
+  , initGoBackNARQ
+  , Time (..)
+  , newClock
+  , tickSend
+  , tickRecv
+  , noARQ
+  , headerLen
+) where
+
 
 import Prelude as P
 import Foreign.Storable
@@ -99,9 +110,7 @@ tickSend timeVar = atomically $ modifyTVar timeVar (\t -> t {sendTime = sendTime
 tickRecv timeVar = atomically $ modifyTVar timeVar (\t -> t {recvTime = recvTime t + 1})
 
 
-debugP name s = debugM logger $ name P.++ s
-
-initGoBackNARQ clock packetSize name = do
+initGoBackNARQ clock packetSize = do
   stateVar <- newTVarIO $ ARQState {
                      needsAck = False
                    , currentAck = 0
@@ -147,7 +156,9 @@ sendHook stateVar clock packetSize = do
     modifyTVar stateVar (\s -> s {buffer = afterResend, needsAck = False})
     let lastAck = currentAck state
     return $ (mplus (fmap (bufferedToMessage lastAck) resendable)
-                  (if needsAck state then Just $ AckMessage lastAck (packetSize - headerLen)  else Nothing)
+                  (if needsAck state
+                     then Just $ AckMessage lastAck (packetSize - headerLen) 
+                     else Nothing)
                   , lastAck)
   case arqMsg of
     (Just dm@(DataMessage {..})) -> (DC.yield $ Just $ DS.encode dm)
@@ -188,15 +199,15 @@ findAndModify (x : xs) pred f
   | otherwise = let (rest, item) = findAndModify xs pred f in (x : rest, item)
 findAndModify [] pred f = ([], Nothing)
 
-
 --- DEBUGGING
-
+-- TODO: remove this:
+{-
 endToEndTest leftData rightData medium = do
   let packetSize = 1 + headerLen
   leftClock <- newClock 
   rightClock <- newClock
-  leftARQ <- initGoBackNARQ  leftClock packetSize "left"
-  rightARQ <- initGoBackNARQ rightClock packetSize "right"
+  leftARQ <- initGoBackNARQ  leftClock packetSize 
+  rightARQ <- initGoBackNARQ rightClock packetSize 
 
   leftRecvQueue <- newTQueueIO 
   rightRecvQueue <- newTQueueIO 
@@ -237,7 +248,7 @@ tickPipe tick = DC.mapM (\m -> tick >> return m)
 perfectMedium  :: Monad m => Conduit a m a
 perfectMedium = DC.map P.id
 
-slowStepDelay = threadDelay $ (10 ^ 5 * 1)
+slowStepDelay = threadDelay $ (10 ^ 2)
 
 slowStepPerfectMedium = DC.mapM $ \m -> slowStepDelay >> return m
 
@@ -259,3 +270,4 @@ runARQTest = do
   let bigSample = P.concat $ P.replicate 2 sampleData
 
   endToEndTest sampleData bigSample (dropEveryNMedium 20) 
+-}

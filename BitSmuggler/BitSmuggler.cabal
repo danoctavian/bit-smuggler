@@ -135,5 +135,9 @@ Test-Suite spec
                    , helligator >=0.1 && <0.2
                    , byteable >=0.1.1 && <0.2
                    , bytestring-arbitrary >=0.0.3 && <0.1
+                   , async >=2.0.1 && <2.1
+                   , stm >=2.4.3 && <2.5
+
+
 
 
