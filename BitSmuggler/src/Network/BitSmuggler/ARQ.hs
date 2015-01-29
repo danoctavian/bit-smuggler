@@ -110,7 +110,7 @@ tickSend timeVar = atomically $ modifyTVar timeVar (\t -> t {sendTime = sendTime
 tickRecv timeVar = atomically $ modifyTVar timeVar (\t -> t {recvTime = recvTime t + 1})
 
 
-initGoBackNARQ clock packetSize = do
+initGoBackNARQ packetSize clock = do
   stateVar <- newTVarIO $ ARQState {
                      needsAck = False
                    , currentAck = 0
@@ -157,12 +157,11 @@ sendHook stateVar clock packetSize = do
     let lastAck = currentAck state
     return $ (mplus (fmap (bufferedToMessage lastAck) resendable)
                   (if needsAck state
-                     then Just $ AckMessage lastAck (packetSize - headerLen) 
+                     then Just $ AckMessage lastAck packetSize
                      else Nothing)
                   , lastAck)
   case arqMsg of
-    (Just dm@(DataMessage {..})) -> (DC.yield $ Just $ DS.encode dm)
-                                     >> sendHook stateVar clock packetSize
+    (Just dm@(DataMessage {..})) -> (DC.yield $ Just $ DS.encode dm) >> loop
     other -> do
       stateNow <- liftIO $ atomically $ readTVar stateVar
       upstream <- await
@@ -203,7 +202,7 @@ findAndModify [] pred f = ([], Nothing)
 -- TODO: remove this:
 {-
 endToEndTest leftData rightData medium = do
-  let packetSize = 1 + headerLen
+  let packetSize = 1
   leftClock <- newClock 
   rightClock <- newClock
   leftARQ <- initGoBackNARQ  leftClock packetSize 

@@ -131,7 +131,6 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
   -- classify connection 
 
   let noarq = noARQ -- there's no ARQ right now
-  let packetSize = blockSize - Crypto.msgHeaderLen
 
   liftIO $ debugM logger $ "waiting for handshake message"
 
@@ -164,7 +163,7 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
          -- schedule removal when this thread finishes
          register $ modActives (Map.delete token) stateVar
 
-         runConnection packetSize noarq
+         runConnection packetSize initGoBackNARQ
                        serverEncrypt (decrypt crypto) token
                        userHandle dataPipes
 

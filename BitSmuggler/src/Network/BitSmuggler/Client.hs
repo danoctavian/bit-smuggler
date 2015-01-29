@@ -24,7 +24,7 @@ import Network.BitSmuggler.Common
 import Network.BitSmuggler.Crypto as Crypto
 import Network.BitSmuggler.Protocol
 import Network.BitSmuggler.Utils
-import Network.BitSmuggler.ARQ
+import Network.BitSmuggler.ARQ as ARQ
 
 
 {-
@@ -89,7 +89,8 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   dataGate <- liftIO $ newGate
   let dataPipes = DataPipes controlPipe pieceHooks dataGate
   
-  userPipe <- launchPipes packetSize noARQ clientEncrypter (decrypt cryptoOps)  dataPipes
+  userPipe <- launchPipes packetSize initGoBackNARQ
+                          clientEncrypter (decrypt cryptoOps)  dataPipes
   userGate <- liftIO $ newGate -- closed gate
   exitGate <- liftIO $ newGate
   -- the provided user handle. runs only when connection started
@@ -152,9 +153,6 @@ clientProxyInit handleConn pieceHs fileFix serverAddress direction local remote 
                           , onDisconnect = return () -- don't do anything
                         }
 
-
-packetSize = blockSize - Crypto.msgHeaderLen
-
 handleConnection stateVar  (cryptoOps, repr) userPipe userGate
   (DataPipes control (PieceHooks {..}) dataGate) = do
   state <- atomically $ readTVar stateVar
@@ -170,8 +168,9 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
   -- send the first message (hanshake)
   -- the size of the block is smaller bc we need to make space for the
   -- elligatored publick key of the client
+  -- and larger cause there is no ARQ for this message
   DC.sourceList [Just $ Control $ ConnRequest repr (serverToken state)]
-             =$ sendPipe (packetSize - Crypto.keySize) (DC.mapM $ \bs -> (liftIO $ debugM logger "outgoing stuff") >> return bs) -- (sendARQ noARQ)
+             =$ sendPipe (packetSize + ARQ.headerLen - Crypto.keySize) (sendARQ noARQ)
                   (encrypter (encryptHandshake (cryptoOps, repr)) cprg)
              $$ outgoingSink (read sendGetPiece) 
                              (\p -> write sendPutBack p) noGate

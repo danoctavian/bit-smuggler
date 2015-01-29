@@ -33,7 +33,7 @@ import Network.BitSmuggler.Crypto as Crypto
 import Network.BitSmuggler.Utils
 import qualified Network.BitSmuggler.BitTorrentParser as BT
 
-import Network.BitSmuggler.ARQ
+import Network.BitSmuggler.ARQ as ARQ
 import Network.BitSmuggler.Common
 
 {-
@@ -60,6 +60,8 @@ handling data streams
     Eg.: some clever way of taking a piece of cyphertext and making it
     match the distribution properties of a video codec.
 -}
+
+packetSize = blockSize - Crypto.msgHeaderLen - ARQ.headerLen
 
 blockSize :: Int
 blockSize = 16 * 1024 
@@ -171,7 +173,7 @@ data DataPipes r s = DataPipes {
 }
 
 -- putting it all together
-launchPipes packetSize  arq encrypter decrypt
+launchPipes packetSize  initARQ encrypter decrypt
             (DataPipes control (PieceHooks {..}) allowData) = do
   userSend <- liftIO $ (newTQueueIO :: IO (TQueue ByteString))
   userRecv <- liftIO $ (newTQueueIO :: IO (TQueue ByteString))
@@ -185,6 +187,8 @@ launchPipes packetSize  arq encrypter decrypt
                              tickRecv clock
                              return piece
   let clockedPutBackPiece p = liftIO $ write sendPutBack p >> tickSend clock
+
+  arq <- liftIO $ initARQ packetSize clock
 
   -- launch receive pipe
   allocLinkedAsync $ async

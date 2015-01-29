@@ -47,11 +47,11 @@ reliablyDelivers medium leftData rightData
 endToEndTest :: [StreamData] -> [StreamData] -> Conduit StreamData IO StreamData
                 -> PropertyM IO ()
 endToEndTest leftData rightData medium = do
-  let packetSize = 1 + headerLen
+  let packetSize = 1
   leftClock <- liftIO $ newClock 
   rightClock <- liftIO $ newClock
-  leftARQ <- liftIO $ initGoBackNARQ  leftClock packetSize 
-  rightARQ <- liftIO $ initGoBackNARQ rightClock packetSize 
+  leftARQ <- liftIO $ initGoBackNARQ  packetSize leftClock
+  rightARQ <- liftIO $ initGoBackNARQ packetSize rightClock 
 
   leftRecvQueue <- liftIO $ newTQueueIO 
   rightRecvQueue <- liftIO $ newTQueueIO 
