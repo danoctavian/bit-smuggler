@@ -176,16 +176,26 @@ launchPipes packetSize  arq encrypter decrypt
   userSend <- liftIO $ (newTQueueIO :: IO (TQueue ByteString))
   userRecv <- liftIO $ (newTQueueIO :: IO (TQueue ByteString))
 
+  -- create clock - keeps track of how many pieces flow upstream /downstream
+  clock <- liftIO $ newClock 
+  -- the clock ticks are associated with the functions handling the receive
+  -- and sending of pieces respectively
+  let clockedRecvPiece = liftIO $ do
+                             piece <- read recvPiece
+                             tickRecv clock
+                             return piece
+  let clockedPutBackPiece p = liftIO $ write sendPutBack p >> tickSend clock
+
   -- launch receive pipe
   allocLinkedAsync $ async
-          $ (readSource (liftIO $ read recvPiece)) =$ (recvPipe (recvARQ arq) decrypt)
+          $ (readSource clockedRecvPiece) =$ (recvPipe (recvARQ arq) decrypt)
           $$ msgSink (pipeRecv control) userRecv
 
   -- launch send pipe
   allocLinkedAsync $ async
          $ (msgSource (pipeSend control) userSend)
          =$ sendPipe packetSize (sendARQ arq) encrypter
-         $$ outgoingSink (read sendGetPiece) (\p -> write sendPutBack p) allowData
+         $$ outgoingSink (read sendGetPiece) clockedPutBackPiece allowData
 
   return $ Pipe userRecv userSend
 
