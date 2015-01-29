@@ -9,6 +9,7 @@ import Control.Monad.Trans.Resource
 import qualified Data.ByteString.Lazy as BSL
 import Data.ByteString as BS
 import Control.Monad.IO.Class
+import Control.Applicative
 import Data.IP
 import Control.Monad
 import Control.Exception
@@ -61,6 +62,8 @@ data Connection = Conn {
     onHoldSince :: Maybe UTCTime
   , handlerTask :: Async ()
   , dataPipes :: DataPipes ClientMessage ServerMessage
+
+  , pieceProxy :: Async ()
 }
 
 
@@ -110,24 +113,28 @@ serverConnInit secretKey stateVar handleConn fileFix direction local remote = do
   liftIO $ debugM logger $ "handling a connection to or from remote address "
                          P.++ (show remote)
 
+  disconnectGate <- newGate 
+
   -- don't keep the proxy waiting and fork a worker
   -- to handle the connection
-  forkIO $ handleConnection stateVar pieceHs secretKey handleConn
+  forkIO $ handleConnection stateVar pieceHs secretKey handleConn disconnectGate
+
 
   streams <- fmap (if direction == Reverse then Tup.swap else P.id) $
                 makeStreams pieceHs fileFix
   return $ DataHooks { incoming = P.fst streams
                      , outgoing = P.snd streams
                         -- TODO: implement 
-                     , onDisconnect = debugM logger "!! DISCONNECT" >> return () 
+                     , onDisconnect = do
+                         debugM logger "!! DISCONNECT"
+                         atomically $ openGate disconnectGate  -- signal the disconnect
+                         return () 
                     } 
 
 
-modActives f s = atomically $ modifyTVar s
-  (\s -> s {activeConns = f $ activeConns s})
+modActives f s = modifyTVar s (\s -> s {activeConns = f $ activeConns s})
 
-
-handleConnection stateVar pieceHooks secretKey userHandle = do
+handleConnection stateVar pieceHs secretKey userHandle disconnectGate = do
   -- classify connection 
 
   let noarq = noARQ -- there's no ARQ right now
@@ -135,7 +142,7 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
   liftIO $ debugM logger $ "waiting for handshake message"
 
   [fstClientMessage] <-
-    runConduit $ (readSource (liftIO $ read $ recvPiece pieceHooks))
+    runConduit $ (readSource (liftIO $ read $ recvPiece pieceHs))
                =$ (recvPipe (recvARQ noarq) $ handshakeDecrypt secretKey) =$ DC.take 1
 
   liftIO $ debugM logger $ "received first message  from client !"
@@ -157,18 +164,26 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
       let controlPipe = Pipe controlRecv controlSend
   -- to handle the connection
       dataGate <- liftIO $ newGate 
-      let dataPipes = DataPipes controlPipe pieceHooks dataGate
+
+      -- make some hooks specific to this particular connection
+      connPieceHooks <- makePieceHooks
+      let dataPipes = DataPipes controlPipe connPieceHooks dataGate
+      
+      pieceProxyTask <- async $ runPieceProxy pieceHs connPieceHooks
 
       task <- async $ runResourceT $ do
          -- schedule removal when this thread finishes
-         register $ modActives (Map.delete token) stateVar
+         register $ atomically $ modActives (Map.delete token) stateVar
 
          runConnection packetSize initGoBackNARQ
                        serverEncrypt (decrypt crypto) token
                        userHandle dataPipes
 
-      modActives (Map.insert token (Conn Nothing task dataPipes))
-                 stateVar
+      atomically $ modActives (Map.insert token
+                              (Conn Nothing task dataPipes pieceProxyTask)) stateVar
+      -- schedule disconnect cleanup
+      forkIO $ disconnectCleanup disconnectGate token stateVar
+
       return ()     
 
     Control (ConnRequest keyRepr (Just token)) -> do
@@ -178,8 +193,17 @@ handleConnection stateVar pieceHooks secretKey userHandle = do
         Just conn -> do
           -- TODO: implement session loading
           -- hint: use a proxy for incoming and out going bt pieces
-          errorM logger "session loading not implemented!"
-          throwIO UnsupportedFeature 
+          debugM logger $ "reloading client session with token " P.++ (show token)
+
+          pieceProxyTask <- async $ runPieceProxy pieceHs (pieceHooks $ dataPipes conn)
+          atomically $ modActives
+                   (Map.adjust (\conn -> conn {pieceProxy = pieceProxyTask}) token)
+                   stateVar
+
+          -- schedule disconnect cleanup
+          forkIO $ disconnectCleanup disconnectGate token stateVar
+          return ()
+
         Nothing -> do
           errorM logger "session token not found"
           throwIO ClientProtocolError
@@ -206,6 +230,33 @@ runConnection packetSize arq encrypter decrypt token userHandle ps@(DataPipes {.
   liftIO $ userHandle $ pipeToConnData user
   return ()
 
- 
+
+disconnectCleanup disconnectGate token stateVar = do
+  -- wait at the gate till the disconnect is signalled
+  atomically $ goThroughGate disconnectGate 
+  now <- getCurrentTime
+  maybeConn <- atomically $ do
+    modActives (Map.adjust (\conn -> conn {onHoldSince = Just now}) token) stateVar
+    state <- readTVar stateVar
+    return $ Map.lookup token . activeConns $ state
+  case maybeConn of
+    (Just conn) -> cancel $ pieceProxy conn -- stop the piece proxy
+    Nothing -> return () -- it's just not there anymore
+
 handshakeDecrypt sk bs = fmap P.snd $ tryReadHandshake sk $ bs
 
+-- this proxy runs on every connect until disconnect
+-- it terminates when its thread is killed off
+runPieceProxy src dest = runResourceT $ do
+
+  -- clear up any leftover in the putback var
+  liftIO $ tryRead (sendPutBack dest)
+
+  r <- runProxy recvPiece src dest
+  sg <- runProxy sendGetPiece src dest
+  sp <-runProxy sendPutBack dest src -- put back goes in the reverse direction
+  forM (P.map snd [r, sg, sp]) $ liftIO . wait -- just block 
+  return ()
+  
+runProxy op src dest =
+  allocLinkedAsync $ async $ forever $ read (op src) >>= write (op dest)

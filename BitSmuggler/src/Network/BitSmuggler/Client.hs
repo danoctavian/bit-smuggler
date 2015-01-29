@@ -107,7 +107,15 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
  
   let handleConn = handleConnection clientState
                     (cryptoOps, pubKeyRepr) userPipe userGate dataPipes
-  let onConn = clientProxyInit handleConn pieceHooks fileFixer (serverAddr serverDescriptor)
+
+  let onDisconnect = do
+                  debugM logger "bitsmuggler connection disconnect occured."
+                  atomically $ closeGate dataGate
+                  return ()
+
+    
+  let onConn = clientProxyInit handleConn onDisconnect
+                pieceHooks fileFixer (serverAddr serverDescriptor)
 
   liftIO $ debugM logger "finished initializng client..."
 
@@ -126,7 +134,7 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   return ()
 
 
-clientProxyInit handleConn pieceHs fileFix serverAddress direction local remote = do
+clientProxyInit handleConn onConnLoss pieceHs fileFix serverAddress direction local remote = do
 
   liftIO $ debugM logger $ "bittorrent client connects to remote " P.++ (show remote)
   liftIO $ debugM logger $ "expected server address is " P.++ (show serverAddress)
@@ -140,10 +148,8 @@ clientProxyInit handleConn pieceHs fileFix serverAddress direction local remote 
                     makeStreams pieceHs fileFix
     return $ DataHooks { incoming = P.fst streams
                          , outgoing = P.snd streams 
-                         , onDisconnect = do
-                             debugM logger "bitsmuggler connection disconnect occured."
-                             return ()
-                             -- TODO: implement 
+                         , onDisconnect = onConnLoss
+                            -- TODO: implement 
                         }
 
   -- it's some other connection - just proxy data without any 

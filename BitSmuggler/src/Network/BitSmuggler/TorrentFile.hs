@@ -107,8 +107,9 @@ blockPos pieceLen (index, block)
 
 makeBlockLoader (SingleFile {..}) filePath = do
   -- TODO: figure out why memory mapping doesn't work
-  -- lazy loading the whole file isn't an option.
   -- mmapFileByteStringLazy filePath Nothing
+  -- it seems to just load the wrong things
+  -- lazy loading the whole file isn't an option- it blows up the memory
   file <- BSL.readFile filePath
   return $ \pos -> -- this function is "pure" but it does lazy i/o
     let (start, len) =  blockPos (fromIntegral tPieceLength) pos

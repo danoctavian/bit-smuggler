@@ -265,22 +265,24 @@ data PieceHooks = PieceHooks {
 }
 
 -- a wrapper for shared memory (can be tvar, or tbqueue or whatever)
-data SharedMem a = SharedMem {read :: IO a, write :: a -> IO ()}
+data SharedMem a = SharedMem { read :: IO a, write :: a -> IO (), tryRead :: IO (Maybe a)}
 
-stmShared r w var = SharedMem {read = atomically $ r var, write = atomically . (w var)}
+stmShared r w tr var = SharedMem { read = atomically $ r var
+                              , write = atomically . (w var)
+                              , tryRead = atomically $ tr var}
 
 makePieceHooks = do
   [sendGet, sendPut] <- CM.replicateM 2 (liftIO $ newEmptyTMVarIO)
   recv <- newTQueueIO
-  return $ PieceHooks (stmShared readTQueue writeTQueue recv)
-                      (stmShared takeTMVar putTMVar sendGet)
-                      (stmShared takeTMVar putTMVar sendPut)
+  return $ PieceHooks (stmShared readTQueue writeTQueue tryReadTQueue recv)
+                      (stmShared takeTMVar putTMVar tryTakeTMVar sendGet)
+                      (stmShared takeTMVar putTMVar tryTakeTMVar sendPut)
 
 makeStreams (PieceHooks {..}) getFileFixer = do
   -- a tmvar used to notify the recv thread of the infohash of the stream
   -- in the case in which the send thread learns about it
   notifyIH <- newEmptyTMVarIO 
-  let sharedIH = stmShared takeTMVar putTMVar notifyIH
+  let sharedIH = stmShared takeTMVar putTMVar tryTakeTMVar notifyIH
   return $ ((btStreamHandler $ recvStream getFileFixer 
                                    (write recvPiece)
                                    (read sharedIH))
