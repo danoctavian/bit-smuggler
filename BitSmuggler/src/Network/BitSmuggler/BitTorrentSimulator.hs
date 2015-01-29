@@ -67,6 +67,12 @@ import qualified Network.BitSmuggler.TorrentClientProc as Proc
    NON-DEFENSIVE programming - this code crashes if not given right input - it's only used for testing to it needen't be robust    
 -}
 
+-- CONSTANTS 
+
+-- wait time between 2 bittorrent messages 
+msgTimeInterval = 10 ^ 5 -- micro seconds
+
+
 -- RPC aspects
 rpcmod = "bittorrent"
 
@@ -154,7 +160,7 @@ listenForPeers respSource port = do
     debugM logger "received connection. draining socket.."
     cmdChan <- newTChanIO 
 
-    concurrently  (dumpChunkFile respSource (appSink appData) cmdChan)
+    concurrently  (dumpChunkFile respSource (appSink appData) cmdChan Never)
                   ((appSource appData) $$ awaitForever return)
     return ()
 
@@ -229,23 +235,39 @@ doTorrent cmdChan connData = do
   let cd = connData
   debugM logger $ "attempting connection to " P.++ (show $ peerAddr cd) P.++
                   " through the proxy with address " P.++ (show $ proxyAddr cd)
-  runProxyTCPClient (BSC.pack . fst . proxyAddr $ cd) (snd . proxyAddr $ cd)
-    (Socks4.clientProtocol (read . fst . peerAddr $ cd, snd . peerAddr $ cd) CONNECT)
-    $ \sink resSrc remoteConn -> do
-      -- TODO: now sending the file contents in a loop; this doesn't really work
-      -- bc initial handshake gets repeated; change this
-      dumpChunkFile (dataFile connData) sink cmdChan
-      return ()
+
+  -- emulating disconnects
+  forM [AfterNMsgs 40, Never] $ \disconnect -> do
+    runProxyTCPClient (BSC.pack . fst . proxyAddr $ cd) (snd . proxyAddr $ cd)
+      (Socks4.clientProtocol (read . fst . peerAddr $ cd, snd . peerAddr $ cd) CONNECT)
+      $ \sink resSrc remoteConn -> do
+        dumpChunkFile (dataFile connData) sink cmdChan disconnect
+        return ()
 
 
-dumpChunkFile file sink cmdChan = do
+dumpChunkFile file sink cmdChan disconnect = do
   withFile file ReadMode $ \file -> do
     debugM logger $ "dumping traffic replay into socket from file "
                   P.++ (show file)
     sourceHandle file $= conduitGet (DS.get :: DS.Get NetworkChunk)
-      $= emitChunks cmdChan $$ sink
+      $= emitChunks cmdChan $= (connCutter disconnect) $$ sink
     debugM logger $ "finished dumping"
 
+
+data DisconnectEvent  = Never | AfterNMsgs Int
+connCutter Never = CL.map P.id
+-- cut one time after msgs messages
+connCutter (AfterNMsgs msgs) = go 0
+  where
+    go n = do
+      if n == msgs then return () -- terminate
+      else do
+        upstream <- await
+        case upstream of
+          (Just item) -> DC.yield item >> go (n + 1)
+          Nothing -> return ()
+      
+  
 
 data NetworkChunk = NetworkChunk BS.ByteString
 
@@ -258,7 +280,7 @@ instance Serialize NetworkChunk where
 
 emitChunks cmdChan = go >> return () where
   go = runEitherT $ forever $ do
-    liftIO $ threadDelay $ 10 ^ 5
+    liftIO $ threadDelay $ msgTimeInterval
     maybeCmd <- liftIO $ atomically $ tryReadTChan cmdChan
     case maybeCmd of
       Just cmd -> takeCmd cmdChan cmd 
