@@ -27,7 +27,9 @@ data TorrentProc = TorrentProc {
 }
 
 
-uTorrentProc path = TorrentProc {
+uTorrentProc root = do
+  path <- fmap fromString $ absolutePath root  
+  return $ TorrentProc {
     cleanState = cleanUTorrentState path
   , start = (shelly $ chdir path $ Sh.run (path </> ("utserver" :: Sh.FilePath)) [])
             >> return ()
@@ -35,7 +37,7 @@ uTorrentProc path = TorrentProc {
   , setSettings = \ss -> writeFile
                          (pathToString $ path </> ("utserver.conf" :: Sh.FilePath))
                          (P.concat $ intersperse "\n" $ P.map utConf ss)
-  , getFilePath = \file -> pathToString $ path </> file
+  , getFilePath = \file ->pathToString $ path </> file
 }
 
 utConfVar name val = name ++ ": " ++ val

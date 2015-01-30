@@ -17,6 +17,8 @@ import Control.Monad
 import System.FilePath
 import System.Directory
 
+import Network.BitSmuggler.Utils
+
 {-
 cache of files stored in a directory
 
@@ -32,7 +34,8 @@ data FileCache k = FileCache {
 mapFile = "mapFile.cache"
 
 load :: (Ord a, Serialize a) => FilePath -> IO (FileCache a)
-load root = do
+load path = do
+  root <- absolutePath path
   let mapFilePath = root </> mapFile
   exists <- doesFileExist mapFilePath
   files <- if exists

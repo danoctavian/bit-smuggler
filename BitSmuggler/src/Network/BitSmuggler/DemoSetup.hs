@@ -16,6 +16,7 @@ import Data.Serialize as DS
 import Data.Map.Strict as Map
 import Data.Binary as Bin
 import qualified Network.BitTorrent.ClientControl as BT
+import qualified Network.BitTorrent.ClientControl.UTorrent as UT
 import System.IO
 import System.Log.Logger
 import Control.Concurrent
@@ -34,7 +35,7 @@ import Network.BitSmuggler.BitTorrentSimulator as Sim
 import Network.BitSmuggler.Server as Server
 import Network.BitSmuggler.Client as Client
 import Network.BitSmuggler.FileCache as Cache
-import Network.BitSmuggler.TorrentClientProc as Cache
+import Network.BitSmuggler.TorrentClientProc as Proc
 
 
 
@@ -53,37 +54,51 @@ torrentFilePath = "../contactFile/testFile.torrent"
 torrentProcPath = "utorrent-client"
 cachePath = "cache"
 
+testServerIP = [5,151,211,73]
+
+uTorrentConnect host port = UT.makeUTorrentConn host port ("admin", "")
+
+tryUTorrentProc = do
+  proc <- uTorrentProc "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_1"
+  Proc.cleanState proc 
+  forkIO $ do
+    threadDelay $ 10 ^ 6 * 3
+    conn <- uTorrentConnect "127.0.0.1" 7999 
+    BT.setSettings conn [BT.BindPort 2015]
+  start proc
+  
+
 -- UTORRENT based client and server 
 runRealDemoClient = do
   updateGlobalLogger logger  (setLevel DEBUG)
   contact <- makeContactFile torrentFilePath 
-  (serverDesc, _) <- makeServerDescriptor contact (IPv4 $ toIPv4 [5,151,211,86])
+  (serverDesc, _) <- makeServerDescriptor contact (IPv4 $ toIPv4 testServerIP)
 
-  let proc = uTorrentProc torrentProcPath
+  proc <- uTorrentProc torrentProcPath
 
-  let btC = clientBTClientConfig {btProc = proc}
-  Client.clientConnect (ClientConfig btC serverDesc serverCachePath) clientChunkExchange
+  let btC = clientBTClientConfig { btProc = proc
+                                 , connectToClient = uTorrentConnect}
+  Client.clientConnect (ClientConfig btC serverDesc cachePath) clientChunkExchange
   return ()
 
 runRealDemoServer = do
   updateGlobalLogger logger  (setLevel DEBUG)
   contact <- makeContactFile torrentFilePath 
-  (serverDesc, sk) <- makeServerDescriptor contact (IPv4 $ toIPv4 [5,151,211,86])
+  (serverDesc, sk) <- makeServerDescriptor contact (IPv4 $ toIPv4 testServerIP)
 
-  let proc = uTorrentProc torrentProcPath
-  let btC = serverBTClientConfig {btProc = proc}
+  proc <- uTorrentProc torrentProcPath
+  let btC = serverBTClientConfig { btProc = proc
+                                 , connectToClient = uTorrentConnect}
 
-  Server.listen (ServerConfig sk btC [contact] clientCachePath) serverChunkExchange
+  Server.listen (ServerConfig sk btC [contact] cachePath) serverChunkExchange
   return ()
-
-
 
 -- =======================
 
 -- SIMULATOR BASED client and server
-setupFileCache path = do
-  contact <- makeContactFile testTFile
-  fHandle <- openFile testDataFile ReadMode
+setupFileCache path torrentFilePath dataFilePath = do
+  contact <- makeContactFile torrentFilePath 
+  fHandle <- openFile dataFilePath ReadMode
   cache <- Cache.load path 
   Cache.put cache (infoHash contact) $  sourceHandle fHandle
   hClose fHandle
@@ -99,7 +114,6 @@ runFullDemo = do
   waitBoth server client
   debugM logger "finished demo"
   return ()
-
 
 
 runDemoClient = do

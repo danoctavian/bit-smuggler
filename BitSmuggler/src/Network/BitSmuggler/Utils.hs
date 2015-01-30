@@ -27,6 +27,7 @@ module Network.BitSmuggler.Utils (
   , hoistMaybe
   , toLazy
   , logger
+  , absolutePath
 ) where
 
 import Data.Typeable
@@ -39,6 +40,8 @@ import Data.LargeWord
 import Data.Serialize as DS
 import Data.Serialize.Put as DS
 import Data.Serialize.Get as DS
+import System.FilePath.Posix
+import System.Directory
 
 import Data.Conduit as DC
 import Control.Concurrent.STM
@@ -166,3 +169,9 @@ allocLinkedAsync runAsync
 
 -- BYTESTRING
 toLazy bs = BSL.fromChunks [bs]
+
+
+-- FILESYSTEM
+
+-- WARNING: doesn't deal with dot dots
+absolutePath path = fmap ((flip (</>)) path) getCurrentDirectory

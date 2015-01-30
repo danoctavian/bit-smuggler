@@ -108,11 +108,15 @@ setupBTClient config = do
   liftIO $ TC.setSettings proc [CmdPort (cmdPort config)
                               , TC.BindPort (pubBitTorrentPort config)]
 
-  btClient <- allocAsync (async $ start proc)
+  liftIO $ debugM logger "started bittorrent client proc"
+
+  btClient <- allocLinkedAsync (async $ start proc)
   liftIO $ threadDelay $ milli -- wait 1 second
   
-  conn <- liftIO $ recovering (limitRetries 3 <> constantDelay milli) [alwaysRetry]
-                 $ connectToClient config localhost (cmdPort config)
+  conn <- liftIO $ recovering (limitRetries 4 <> constantDelay milli) [alwaysRetry]
+                 $ do
+                  debugM logger "attempting to connect to bittorrent client..."
+                  connectToClient config localhost (cmdPort config)
 
   {-
       Some of these settings are quirks of uTorrent so here the abstraction
@@ -121,7 +125,7 @@ setupBTClient config = do
                  and not circumvent them
       TODO: explain the rest of the settings
   -}
-  liftIO $ CC.setSettings conn [UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, UTP True, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP localhost, ProxyPort (socksProxyPort config), ProxyP2P True]
+  liftIO $ CC.setSettings conn [CC.BindPort (pubBitTorrentPort config), UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, UTP True, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP localhost, ProxyPort (socksProxyPort config), ProxyP2P True]
 
   return ((proc, btClient), conn)
 
