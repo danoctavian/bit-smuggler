@@ -243,6 +243,7 @@ doTorrent cmdChan connData = do
       $ \sink resSrc remoteConn -> do
         dumpChunkFile (dataFile connData) sink cmdChan disconnect
         return ()
+    threadDelay $ 10 ^ 6
 
 
 dumpChunkFile file sink cmdChan disconnect = do

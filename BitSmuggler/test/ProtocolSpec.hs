@@ -32,7 +32,7 @@ spec = do
   return ()
 
 
-packetSize = blockSize - Crypto.msgHeaderLen
+testPacketSize = blockSize - Crypto.msgHeaderLen -- just crypto, no ARQ
 
 sendFuseRecvIsId arbBs
   = unsafePerformIO (sourceList (P.map Just wireMsgs) =$ send =$= catMaybes =$= recv $$ DC.take (P.length wireMsgs))
@@ -40,7 +40,7 @@ sendFuseRecvIsId arbBs
     where
       messages = P.map fromABS arbBs
       recv = recvPipe (DC.map P.id) fakeDecrypt
-      send = sendPipe packetSize (DC.map P.id) fakeEncrypter
+      send = sendPipe testPacketSize (DC.map P.id) fakeEncrypter
       wireMsgs :: [WireMessage ServerMessage]
       wireMsgs = P.map Data messages
 

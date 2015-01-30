@@ -57,8 +57,11 @@ runFullDemo = do
 
 chunks = [ BS.replicate 1000 99, BS.replicate (10 ^ 4)  200
          , BS.concat [BS.replicate (10 ^ 4) 39, BS.replicate (10 ^ 4) 40]
-         , BS.replicate (10 ^ 4)  173]
+         , BS.replicate (10 ^ 4)  173
+         , BS.replicate (10 ^ 3)  201
+         , BS.replicate (10 ^ 3)  202] P.++ smallChunks
 
+smallChunks = P.map (BS.replicate (10 ^ 2)) [1..5]
 runDemoClient = do
   updateGlobalLogger logger  (setLevel DEBUG)
 
@@ -85,11 +88,11 @@ runDemoClient = do
     connSend c "hello from client"
     response <- connRecv c
     infoM logger $ show response
-    forM chunks $ \chunk -> do
+    forM (P.zip chunks [1..]) $ \(chunk, i) -> do
       connSend c chunk 
       bigBlock <- connRecv c
       assert (bigBlock == chunk) (return ())
-      debugM logger "client received big chunk succesfully"
+      debugM logger $ "client received big chunk succesfully " P.++ (show i)
     threadDelay $ 10 ^ 8
 
 runDemoServer = do
@@ -111,10 +114,11 @@ runDemoServer = do
     message <- connRecv c
     P.putStrLn $ show message
     connSend c "hello from server"
-    forM chunks $ \chunk -> do
+    forM (P.zip chunks [1..]) $ \(chunk, i) -> do
       bigBlock <- connRecv c
       assert (bigBlock == chunk) (return ())
-      debugM logger "server received big chunk succesfully"
+      debugM logger $ "server received big chunk succesfully " P.++ (show i)
+
       connSend c chunk 
     threadDelay $ 10 ^ 8
 
