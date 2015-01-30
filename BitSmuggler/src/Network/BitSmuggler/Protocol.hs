@@ -10,6 +10,8 @@ import Data.Serialize as DS
 import Data.Serialize.Put
 import Data.Serialize.Get
 import Data.Conduit.Cereal
+import Data.Conduit.Cereal.Internal
+
 import Data.Conduit as DC
 import Data.Conduit.List as DC
 import Data.ByteString as BS
@@ -290,10 +292,14 @@ makeStreams (PieceHooks {..}) getFileFixer = do
                                    (liftIO $ read sendPutBack)
                                    (liftIO . (write sharedIH)))
 
-btStreamHandler transform = conduitGet (get :: Get BT.StreamChunk)
-                          
+btStreamHandler transform = (mkConduitGet handleStreamFail (get :: Get BT.StreamChunk)
+                             >> DC.map BT.Unparsed)
+                          -- conduitGet (get :: Get BT.StreamChunk)
                           =$ transform
                           =$ conduitPut (put :: Putter BT.StreamChunk)
+
+handleStreamFail _ = DC.mapM (\bs -> return (unsafePerformIO $ P.putStrLn "stream fail")
+                                     >> return $ BT.Unparsed bs)
 
 type LoadBlock = (Int, BT.Block) -> ByteString 
 

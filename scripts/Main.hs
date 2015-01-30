@@ -36,9 +36,9 @@ import Data.Conduit.Network
 import Network.BitTorrent.Shepherd as Tracker
 import Network.BitTorrent.ClientControl
 import Network.BitTorrent.ClientControl.UTorrent
-import Network.BitSmuggler.BitTorrentSimulator as Sim hiding (logger)
+import Network.BitSmuggler.BitTorrentSimulator as Sim
 import Network.BitSmuggler.Utils
-import Network.BitSmuggler.Common hiding (logger)
+import Network.BitSmuggler.Common
 import Data.Serialize as DS
 import Control.Concurrent
 import Control.Concurrent.Async
@@ -85,7 +85,7 @@ receiverPeer = do
   Sim.runClient receiverConf
 -}
 
-logger = "scripts"
+--logger = "scripts"
 
 initCaptureHook incFile outFile a1 a2 = do
   incHook <- captureHook incFile
@@ -96,15 +96,15 @@ initCaptureHook incFile outFile a1 a2 = do
 captureHook file = do
   rgen <- newStdGen
   let r = (fst $ random rgen) :: Int
-  tchan <- newTChanIO 
+  tQueue <- newTQueueIO 
   debugM logger $ "setting up capture for " P.++ file
   forkIO $ do
     withFile (file P.++ (show r)) WriteMode $ \fileH -> do
-      sourceTChan tchan  =$ (CL.map (DS.encode . NetworkChunk))   $$ sinkHandle fileH
+      sourceTQueue tQueue {- =$ (CL.map (DS.encode . NetworkChunk))-}   $$ sinkHandle fileH
   debugM logger $ "done setting up capture"
  
   return $ awaitForever
-               (\bs -> (liftIO $ atomically $ writeTChan tchan bs) >> DC.yield bs)
+               (\bs -> (liftIO $ atomically $ writeTQueue tQueue bs) >> DC.yield bs)
  
 
 trafficCapture = do
@@ -147,7 +147,7 @@ testRun = do
   peerSeedTalk "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_0/"
                        "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_1/"
                        "../demo/contactFile/testFile.txt"
-                       "../demo/contactFile/testFile.torrent"
+                       "../demo/localContact/testFile.torrent"
 
 -- script - 2 utorrent clients talk to get a file 
 peerSeedTalk :: Sh.FilePath -> Sh.FilePath -> Sh.FilePath -> Sh.FilePath -> IO ()

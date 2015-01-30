@@ -58,6 +58,7 @@ data Message = KeepAlive
 -- the bittorrent stream starts with a header and continues with 
 -- a series of length-prefixed messages
 data StreamChunk = HandShake Word64 InfoHash PeerID | MsgChunk Word32 Message
+                 | Unparsed ByteString -- an unparsed piece
   deriving (Show, Eq)
 
 type PeerID = Word160
@@ -77,12 +78,14 @@ instance Serialize StreamChunk where
     = putWord8 (fromIntegral protocolHeaderSize) >> putByteString protocolHeader
     >> putWord64be extensions >> DS.put ih >> DS.put pid
   put (MsgChunk len m) = putWord32be len >> put m
+  put (Unparsed bs) = putByteString bs
   get = getHandShake <|> getMsgChunk  
 
 getHandShake = byte (fromIntegral protocolHeaderSize) *> byteString protocolHeader 
          *> (HandShake <$> getWord64be <*> get <*> get)
 getMsgChunk = do
   len <- getWord32be
+  when (len > 17000) $ fail "too big"
   MsgChunk len <$> (DS.isolate (fromIntegral len) get)
 
 instance Serialize Message where

@@ -170,8 +170,11 @@ createContactFile contactFile cache dir =
 createWithCache cache key filePath source = do
   maybeCached <- FC.lookup cache key
   target <- case maybeCached of 
-    (Just cachedFile) -> return cachedFile
+    (Just cachedFile) -> do
+      debugM logger "file is already in the cache"
+      return cachedFile
     Nothing -> put cache key source 
+--  debugM logger $ "creating symbolic link between " ++ target ++ " and " ++ filePath
   createSymbolicLink target filePath
 
 -- rand bytes file with an int seed
@@ -197,12 +200,13 @@ addTorrents btClientConn btProc files = do
       let sf@(SingleFile {..}) = tInfo torrentFile -- assuming it's a single file
       let pieceCount = tLength `div` tPieceLength 
       let fName = (BSLC.unpack tName)
+      let btPath = getFilePath btProc fName
 
       -- create partial file in bittorrent client's file store
       makeRandPartial (fromIntegral tPieceLength) (fromIntegral pieceCount)
-                       dataFile (getFilePath btProc fName)
+                       dataFile  btPath
 
-      debugM logger $ "created a partially completed file" P.++ (show dataFile)
+      debugM logger $ "created a partially completed file" P.++ (show btPath)
 
       runResourceT $ do
         (_, path, handle) <- openTempFile Nothing (fName ++ ".torrent")

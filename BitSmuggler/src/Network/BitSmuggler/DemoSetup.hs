@@ -24,7 +24,9 @@ import Control.Concurrent.Async
 import Control.Exception.Base
 import Control.Monad
 
-import Data.Conduit.Binary as DC
+import Data.Conduit as DC
+import Data.Conduit.List as DC
+import Data.Conduit.Binary as CBin
 
 import Network.BitSmuggler.Common as Common
 import Network.BitSmuggler.Common as Protocol
@@ -36,7 +38,7 @@ import Network.BitSmuggler.Server as Server
 import Network.BitSmuggler.Client as Client
 import Network.BitSmuggler.FileCache as Cache
 import Network.BitSmuggler.TorrentClientProc as Proc
-
+import Network.BitSmuggler.Protocol
 
 
 chunks = [ BS.replicate 1000 99, BS.replicate (10 ^ 4)  200
@@ -234,4 +236,14 @@ serverBTClientConfig = BTClientConfig {
     -- host, port, (uname, password)
   , connectToClient = Sim.clientConn 
 }
+
+
+----- try stream handler
+
+tryBogus = do
+  P.putStrLn "bogus" 
+  withFile "../demo/contactFile/realStream" ReadMode $ \h -> do
+--    DC.sourceList ["omfg"]
+    (sourceHandle h =$ CBin.isolate 302 >> DC.yield "junkie and shit innit")
+      =$ btStreamHandler (DC.map id) $$ DC.consume
 
