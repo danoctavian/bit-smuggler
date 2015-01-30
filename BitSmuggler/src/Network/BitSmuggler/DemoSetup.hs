@@ -34,9 +34,55 @@ import Network.BitSmuggler.BitTorrentSimulator as Sim
 import Network.BitSmuggler.Server as Server
 import Network.BitSmuggler.Client as Client
 import Network.BitSmuggler.FileCache as Cache
+import Network.BitSmuggler.TorrentClientProc as Cache
 
+
+
+chunks = [ BS.replicate 1000 99, BS.replicate (10 ^ 4)  200
+         , BS.concat [BS.replicate (10 ^ 4) 39, BS.replicate (10 ^ 4) 40]
+         , BS.replicate (10 ^ 4)  173
+         , BS.replicate (10 ^ 3)  201
+         , BS.replicate (10 ^ 3)  202] P.++ smallChunks
+
+smallChunks = P.map (BS.replicate (10 ^ 2)) [1..5]
+
+-- =======================
+
+torrentFilePath = "../contactFile/testFile.torrent"
+
+torrentProcPath = "utorrent-client"
+cachePath = "cache"
+
+-- UTORRENT based client and server 
+runRealDemoClient = do
+  updateGlobalLogger logger  (setLevel DEBUG)
+  contact <- makeContactFile torrentFilePath 
+  (serverDesc, _) <- makeServerDescriptor contact (IPv4 $ toIPv4 [5,151,211,86])
+
+  let proc = uTorrentProc torrentProcPath
+
+  let btC = clientBTClientConfig {btProc = proc}
+  Client.clientConnect (ClientConfig btC serverDesc serverCachePath) clientChunkExchange
+  return ()
+
+runRealDemoServer = do
+  updateGlobalLogger logger  (setLevel DEBUG)
+  contact <- makeContactFile torrentFilePath 
+  (serverDesc, sk) <- makeServerDescriptor contact (IPv4 $ toIPv4 [5,151,211,86])
+
+  let proc = uTorrentProc torrentProcPath
+  let btC = serverBTClientConfig {btProc = proc}
+
+  Server.listen (ServerConfig sk btC [contact] clientCachePath) serverChunkExchange
+  return ()
+
+
+
+-- =======================
+
+-- SIMULATOR BASED client and server
 setupFileCache path = do
-  contact <- makeContactFile
+  contact <- makeContactFile testTFile
   fHandle <- openFile testDataFile ReadMode
   cache <- Cache.load path 
   Cache.put cache (infoHash contact) $  sourceHandle fHandle
@@ -55,21 +101,15 @@ runFullDemo = do
   return ()
 
 
-chunks = [ BS.replicate 1000 99, BS.replicate (10 ^ 4)  200
-         , BS.concat [BS.replicate (10 ^ 4) 39, BS.replicate (10 ^ 4) 40]
-         , BS.replicate (10 ^ 4)  173
-         , BS.replicate (10 ^ 3)  201
-         , BS.replicate (10 ^ 3)  202] P.++ smallChunks
 
-smallChunks = P.map (BS.replicate (10 ^ 2)) [1..5]
 runDemoClient = do
   updateGlobalLogger logger  (setLevel DEBUG)
 
-  contact <- makeContactFile
+  contact <- makeContactFile testTFile
 
   debugM logger $ "the contact file's infohash is " P.++ (show $ infoHash contact)
 
-  (serverDesc, _) <- makeServerDescriptor contact
+  (serverDesc, _) <- makeServerDescriptor contact (IPv4 $ toIPv4 [127,0,0,1])
 
   let connData = ConnectionData {
               connTorrent = BT.Torrent  (infoHash contact) $ takeFileName testDataFile
@@ -83,47 +123,53 @@ runDemoClient = do
            (Map.fromList [(Left $ takeFileName testDataFile, connData)])  streamFile
 
   let btC = clientBTClientConfig {btProc = proc}
-  Client.clientConnect (ClientConfig btC serverDesc serverCachePath) $ \c -> do
-    infoM logger "USER: sending the server a hello"
-    connSend c "hello from client"
-    response <- connRecv c
-    infoM logger $ show response
-    forM (P.zip chunks [1..]) $ \(chunk, i) -> do
-      connSend c chunk 
-      bigBlock <- connRecv c
-      assert (bigBlock == chunk) (return ())
-      debugM logger $ "client received big chunk succesfully " P.++ (show i)
-    threadDelay $ 10 ^ 8
+  Client.clientConnect (ClientConfig btC serverDesc serverCachePath) clientChunkExchange 
+
+
+clientChunkExchange c = do
+  infoM logger "USER: sending the server a hello"
+  connSend c "hello from client"
+  response <- connRecv c
+  infoM logger $ show response
+  forM (P.zip chunks [1..]) $ \(chunk, i) -> do
+    connSend c chunk 
+    bigBlock <- connRecv c
+    assert (bigBlock == chunk) (return ())
+    debugM logger $ "client received big chunk succesfully " P.++ (show i)
+  threadDelay $ 10 ^ 8
+
 
 runDemoServer = do
   updateGlobalLogger logger  (setLevel DEBUG)
 
-  contact <- makeContactFile
+  contact <- makeContactFile testTFile
 
   -- the stream has 1156258573216559082388624324876499110422886733169
   -- this has 1422293912806317530710726412509278710035024148095
   debugM logger $ "the contact file's infohash is " P.++ (show $ infoHash contact)
 
-  (serverDesc, sk) <- makeServerDescriptor contact
+  (serverDesc, sk) <- makeServerDescriptor contact (IPv4 $ toIPv4 [127,0,0,1])
 
   proc <- simulatorProc serverBTRoot Map.empty streamFile
 
   let btC = serverBTClientConfig {btProc = proc}
-  Server.listen (ServerConfig sk btC [contact] clientCachePath) $ \c -> do
-    infoM logger "USER: waiting for signs of life from client"
-    message <- connRecv c
-    P.putStrLn $ show message
-    connSend c "hello from server"
-    forM (P.zip chunks [1..]) $ \(chunk, i) -> do
-      bigBlock <- connRecv c
-      assert (bigBlock == chunk) (return ())
-      debugM logger $ "server received big chunk succesfully " P.++ (show i)
+  Server.listen (ServerConfig sk btC [contact] clientCachePath) serverChunkExchange
 
-      connSend c chunk 
-    threadDelay $ 10 ^ 8
+serverChunkExchange c = do
+  infoM logger "USER: waiting for signs of life from client"
+  message <- connRecv c
+  P.putStrLn $ show message
+  connSend c "hello from server"
+  forM (P.zip chunks [1..]) $ \(chunk, i) -> do
+    bigBlock <- connRecv c
+    assert (bigBlock == chunk) (return ())
+    debugM logger $ "server received big chunk succesfully " P.++ (show i)
+
+    connSend c chunk 
+  threadDelay $ 10 ^ 8
+
 
 root = "/home/dan/repos/bitSmuggler/bit-smuggler/demo"
-
 
 clientBTRoot = root </> "client/utorrent-client"
 serverBTRoot = root </> "server/utorrent-client"
@@ -138,22 +184,22 @@ testTFile = root </> "contactFile/testFile.torrent"
 
 testDataFile = root </> "contactFile/testFile.txt"
 
-makeContactFile = do
-  Right t <- fmap readTorrent $ BSL.readFile $ testTFile 
+makeContactFile filePath = do
+  Right t <- fmap readTorrent $ BSL.readFile $ filePath
   return $ FakeFile {seed = 23456, torrentFile = t
                     , infoHash = fromRight $ DS.decode $ fromJust $ textToInfoHash
                                   "ca886d7843c73b182292d4594e7148de208bd571"}
   --fromRight $ DS.decode $ computeInfoHash t}
 
 
-makeServerDescriptor contact = do
+makeServerDescriptor contact ip = do
   let cprg = cprgCreate $ createTestEntropyPool "leSeed" :: AESRNG
   let (skBytes, next2) = cprgGenerate Crypto.keySize cprg
   let serverSkWord = (fromRight $ DS.decode skBytes :: Key)
   let serverPk = derivePublicKey (fromBytes $ toBytes serverSkWord)
   let serverPkWord = (fromRight $ DS.decode (toBytes serverPk) :: Key)
   
-  return $ (ServerDescriptor (IPv4 $ toIPv4 [127,0,0,1]) [contact] serverPkWord
+  return $ (ServerDescriptor ip [contact] serverPkWord
             , serverSkWord)
 
 
