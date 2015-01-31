@@ -300,9 +300,11 @@ makeStreams (PieceHooks {..}) getFileFixer = do
                                    (liftIO $ atomically $ read sendPutBack)
                                    (liftIO . atomically . (write sharedIH)))
 
+-- the stream handler stops parsing when it can no longer 
+-- make sense of the stream and instead forwards Unparsed ByteStrings
+-- which are simply proxied
 btStreamHandler transform = (mkConduitGet handleStreamFail (get :: Get BT.StreamChunk)
                              >> DC.map BT.Unparsed)
-                          -- conduitGet (get :: Get BT.StreamChunk)
                           =$ transform
                           =$ conduitPut (put :: Putter BT.StreamChunk)
 

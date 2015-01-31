@@ -17,6 +17,7 @@ import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TVar
+import Control.Concurrent.STM.TMVar
 import Control.Concurrent.STM.TQueue
 import Data.Time.Clock
 import Data.Conduit as DC
@@ -25,6 +26,7 @@ import Data.Serialize as DS
 import Data.LargeWord
 import Crypto.Random
 import Data.Tuple as Tup
+import System.Timeout
 
 import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature)
 import Network.TCP.Proxy.Socks4 as Socks4
@@ -134,6 +136,8 @@ serverConnInit secretKey stateVar handleConn fileFix direction local remote = do
 
 modActives f s = modifyTVar s (\s -> s {activeConns = f $ activeConns s})
 
+
+-- TODO: this has become a huge-ass function - please break it down
 handleConnection stateVar pieceHs secretKey userHandle disconnectGate = do
   -- classify connection 
 
@@ -142,82 +146,97 @@ handleConnection stateVar pieceHs secretKey userHandle disconnectGate = do
   liftIO $ debugM logger $ "waiting for handshake message"
 
   -- a task to forward outgoing pieces without changing them
-  -- until the initial message stage fininshes 
---  forwardPieces <- async $ read (sendGetPiece piecesHs) >>= write (sendPutBack piecesHs)
+  -- until the initial message stage finishes 
+  kill <- newEmptyTMVarIO
+  forwardPieces <- async $ forwardUntilKilled (read (sendGetPiece pieceHs))
+                                              (write (sendPutBack pieceHs)) 
+                                              kill
 
-  [fstClientMessage] <-
-    runConduit $ (readSource (liftIO $ atomically $ read $ recvPiece pieceHs))
-               =$ (recvPipe (recvARQ noarq) $ handshakeDecrypt secretKey) =$ DC.take 1
+  maybeFstMsg <- timeout (5 * 10 ^ 6) -- wait 5 secs
+     $ runConduit $ (readSource (liftIO $ atomically $ read $ recvPiece pieceHs))
+     =$ (recvPipe (recvARQ noarq) $ handshakeDecrypt secretKey) =$ DC.take 1
 
-  -- stop it after first message
---  cancel forwardPieces
+  case maybeFstMsg of
+    Nothing -> do 
+      -- timedout - just proxy the traffic 
+      -- those threads just suck
+      debugM logger "turns out it's not a bit-smuggler connection"
 
-  liftIO $ debugM logger $ "received first message  from client !"
+      drainIncoming <- async $ forever $ atomically $ read $ recvPiece pieceHs
+      atomically $ goThroughGate disconnectGate
+      -- kill the threads meant to simply move the outgoing/incoming pieces
+      cancel drainIncoming
+      atomically $ putTMVar kill ()
+    Just [fstClientMessage] -> do
 
-  case fstClientMessage of
-    (Control (ConnRequest keyRepr Nothing)) -> do
-      -- client is requesting the creation of a new session
+       -- stop moving pieces after the connection has been recognized as bitsmuggler
+      atomically $ putTMVar kill ()
 
-      liftIO $ debugM logger $ "client requests new session "
+      liftIO $ debugM logger $ "received first message  from client !"
 
-      let crypto = makeServerEncryption secretKey keyRepr
-      initCprg <- liftIO $ makeCPRG
-      let (token, cprg) = cprgGenerate tokenLen initCprg
-      let serverEncrypt = encrypter (encrypt crypto) cprg
-      
-      -- control messages   
-      controlSend <-liftIO $ (newTQueueIO :: IO (TQueue ServerMessage))
-      controlRecv <- liftIO $ (newTQueueIO :: IO (TQueue ClientMessage))
-      let controlPipe = Pipe controlRecv controlSend
-  -- to handle the connection
-      dataGate <- liftIO $ newGate 
+      case fstClientMessage of
+        (Control (ConnRequest keyRepr Nothing)) -> do
+          -- client is requesting the creation of a new session
 
-      -- make some hooks specific to this particular connection
-      connPieceHooks <- makePieceHooks
-      let dataPipes = DataPipes controlPipe connPieceHooks dataGate
-      
-      pieceProxyTask <- async $ runPieceProxy pieceHs connPieceHooks
+          liftIO $ debugM logger $ "client requests new session "
 
-      task <- async $ runResourceT $ do
-         -- schedule removal when this thread finishes
-         register $ atomically $ modActives (Map.delete token) stateVar
+          let crypto = makeServerEncryption secretKey keyRepr
+          initCprg <- liftIO $ makeCPRG
+          let (token, cprg) = cprgGenerate tokenLen initCprg
+          let serverEncrypt = encrypter (encrypt crypto) cprg
+          
+          -- control messages   
+          controlSend <-liftIO $ (newTQueueIO :: IO (TQueue ServerMessage))
+          controlRecv <- liftIO $ (newTQueueIO :: IO (TQueue ClientMessage))
+          let controlPipe = Pipe controlRecv controlSend
+      -- to handle the connection
+          dataGate <- liftIO $ newGate 
 
-         runConnection packetSize initGoBackNARQ
-                       serverEncrypt (decrypt crypto) token
-                       userHandle dataPipes
+          -- make some hooks specific to this particular connection
+          connPieceHooks <- makePieceHooks
+          let dataPipes = DataPipes controlPipe connPieceHooks dataGate
+          
+          pieceProxyTask <- async $ runPieceProxy pieceHs connPieceHooks
 
-      atomically $ modActives (Map.insert token
-                              (Conn Nothing task dataPipes pieceProxyTask)) stateVar
-      -- schedule disconnect cleanup
-      forkIO $ disconnectCleanup disconnectGate token stateVar
+          task <- async $ runResourceT $ do
+             -- schedule removal when this thread finishes
+             register $ atomically $ modActives (Map.delete token) stateVar
 
-      return ()     
+             runConnection packetSize initGoBackNARQ
+                           serverEncrypt (decrypt crypto) token
+                           userHandle dataPipes
 
-    Control (ConnRequest keyRepr (Just token)) -> do
-      -- client is requesting session recovery using token
-      maybeConn <- atomically $ fmap (Map.lookup token . activeConns) $ readTVar stateVar
-      case maybeConn of
-        Just conn -> do
-          -- TODO: implement session loading
-          -- hint: use a proxy for incoming and out going bt pieces
-          debugM logger $ "reloading client session with token " P.++ (show token)
-
-          pieceProxyTask <- async $ runPieceProxy pieceHs (pieceHooks $ dataPipes conn)
-          atomically $ modActives
-                   (Map.adjust (\conn -> conn {pieceProxy = pieceProxyTask}) token)
-                   stateVar
-
+          atomically $ modActives (Map.insert token
+                                  (Conn Nothing task dataPipes pieceProxyTask)) stateVar
           -- schedule disconnect cleanup
           forkIO $ disconnectCleanup disconnectGate token stateVar
-          return ()
 
-        Nothing -> do
-          errorM logger "session token not found"
-          throwIO ClientProtocolError
-    _ -> do
-        errorM logger "The first client message should always be a conn request"
-        throwIO ClientProtocolError
-  -- store conn  
+          return ()     
+
+        Control (ConnRequest keyRepr (Just token)) -> do
+          -- client is requesting session recovery using token
+          maybeConn <- atomically $ fmap (Map.lookup token . activeConns) $ readTVar stateVar
+          case maybeConn of
+            Just conn -> do
+              -- TODO: implement session loading
+              -- hint: use a proxy for incoming and out going bt pieces
+              debugM logger $ "reloading client session with token " P.++ (show token)
+
+              pieceProxyTask <- async $ runPieceProxy pieceHs (pieceHooks $ dataPipes conn)
+              atomically $ modActives
+                       (Map.adjust (\conn -> conn {pieceProxy = pieceProxyTask}) token)
+                       stateVar
+
+              -- schedule disconnect cleanup
+              forkIO $ disconnectCleanup disconnectGate token stateVar
+              return ()
+
+            Nothing -> do
+              errorM logger "session token not found"
+              throwIO ClientProtocolError
+        _ -> do
+            errorM logger "The first client message should always be a conn request"
+            throwIO ClientProtocolError
   return ()
 
 runConnection packetSize arq encrypter decrypt token userHandle ps@(DataPipes {..}) = do
@@ -268,3 +287,10 @@ runPieceProxy src dest = runResourceT $ do
 runProxy op src dest =
   allocLinkedAsync $ async $ forever $  (atomically $ read (op src))
                                          >>=  (atomically . write (op dest))
+
+
+forwardUntilKilled read write kill = do
+  res <- atomically $ (fmap Left $ takeTMVar kill) `orElse` (fmap Right read)
+  case res of 
+    Left () -> return () -- terminate now
+    Right v -> (atomically $ write v) >> forwardUntilKilled read write kill
