@@ -141,9 +141,16 @@ handleConnection stateVar pieceHs secretKey userHandle disconnectGate = do
 
   liftIO $ debugM logger $ "waiting for handshake message"
 
+  -- a task to forward outgoing pieces without changing them
+  -- until the initial message stage fininshes 
+--  forwardPieces <- async $ read (sendGetPiece piecesHs) >>= write (sendPutBack piecesHs)
+
   [fstClientMessage] <-
-    runConduit $ (readSource (liftIO $ read $ recvPiece pieceHs))
+    runConduit $ (readSource (liftIO $ atomically $ read $ recvPiece pieceHs))
                =$ (recvPipe (recvARQ noarq) $ handshakeDecrypt secretKey) =$ DC.take 1
+
+  -- stop it after first message
+--  cancel forwardPieces
 
   liftIO $ debugM logger $ "received first message  from client !"
 
@@ -250,7 +257,7 @@ handshakeDecrypt sk bs = fmap P.snd $ tryReadHandshake sk $ bs
 runPieceProxy src dest = runResourceT $ do
 
   -- clear up any leftover in the putback var
-  liftIO $ tryRead (sendPutBack dest)
+  liftIO $ atomically $ tryRead (sendPutBack dest)
 
   r <- runProxy recvPiece src dest
   sg <- runProxy sendGetPiece src dest
@@ -259,4 +266,5 @@ runPieceProxy src dest = runResourceT $ do
   return ()
   
 runProxy op src dest =
-  allocLinkedAsync $ async $ forever $ read (op src) >>= write (op dest)
+  allocLinkedAsync $ async $ forever $  (atomically $ read (op src))
+                                         >>=  (atomically . write (op dest))

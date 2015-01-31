@@ -178,10 +178,12 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
   DC.sourceList [Just $ Control $ ConnRequest repr (serverToken state)]
              =$ sendPipe (packetSize + ARQ.headerLen - Crypto.keySize) (sendARQ noARQ)
                   (encrypter (encryptHandshake (cryptoOps, repr)) cprg)
-             $$ outgoingSink (read sendGetPiece) 
-                             (\p -> write sendPutBack p) noGate
-
+             $$ outgoingSink (atomically $ read sendGetPiece) 
+                             (\p -> atomically $ write sendPutBack p) noGate
   debugM logger "SENT the handshake message to the server."
+
+  -- let any potential messages flow
+  atomically $ openGate dataGate 
   if (prevToken == Nothing) then do -- first time connecting
     serverResponse <- liftIO $ atomically $ readTQueue (pipeRecv control)
     case serverResponse of
@@ -189,7 +191,6 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
         liftIO $ debugM logger $ "connection to server succesful "
 
         atomically $ modifyTVar stateVar (\s -> s {serverToken = Just token}) 
-        atomically $ openGate dataGate 
         atomically $ openGate userGate -- start the user function
       RejectConn -> do
         errorM logger "connection rejected"
@@ -197,8 +198,6 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
         return ()
   else do
     infoM logger "it's a reconnect. nothing to do..."
-    atomically $ openGate dataGate -- allow messages to pass
-    
   return ()
 
 randInt :: (Int, Int) ->  IO Int 

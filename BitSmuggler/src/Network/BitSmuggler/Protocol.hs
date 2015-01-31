@@ -185,10 +185,10 @@ launchPipes packetSize  initARQ encrypter decrypt
   -- the clock ticks are associated with the functions handling the receive
   -- and sending of pieces respectively
   let clockedRecvPiece = liftIO $ do
-                             piece <- read recvPiece
+                             piece <- atomically $ read recvPiece
                              tickRecv clock
                              return piece
-  let clockedPutBackPiece p = liftIO $ write sendPutBack p >> tickSend clock
+  let clockedPutBackPiece p = liftIO $ (atomically $ write sendPutBack p) >> tickSend clock
 
   arq <- liftIO $ initARQ packetSize clock
 
@@ -201,7 +201,7 @@ launchPipes packetSize  initARQ encrypter decrypt
   allocLinkedAsync $ async
          $ (msgSource (pipeSend control) userSend)
          =$ sendPipe packetSize (sendARQ arq) encrypter
-         $$ outgoingSink (read sendGetPiece) clockedPutBackPiece allowData
+         $$ outgoingSink (atomically $ read sendGetPiece) clockedPutBackPiece allowData
 
   return $ Pipe userRecv userSend
 
@@ -262,16 +262,24 @@ getMsg = byte msgHead >> getWord32le >>= getBytes . fromIntegral
 
 data PieceHooks = PieceHooks {
     recvPiece :: SharedMem ByteString
+
+  -- this is pretty horrible
+  -- TODO make sure that this is in some way atomic aka
+  -- you have a single operation applyToPiece :: (Piece -> IO (Piece)) -> IO ()
+  -- or better MonadIO m => (Piece -> m Piece) -> m ()
+  -- and an exception occurs in the operation the piece is pushed back out unharmed
   , sendGetPiece :: SharedMem ByteString
   , sendPutBack :: SharedMem ByteString
 }
 
 -- a wrapper for shared memory (can be tvar, or tbqueue or whatever)
-data SharedMem a = SharedMem { read :: IO a, write :: a -> IO (), tryRead :: IO (Maybe a)}
+data SharedMem a = SharedMem { read :: STM a
+                             , write :: a -> STM ()
+                             , tryRead :: STM (Maybe a)}
 
-stmShared r w tr var = SharedMem { read = atomically $ r var
-                              , write = atomically . (w var)
-                              , tryRead = atomically $ tr var}
+stmShared r w tr var = SharedMem { read = r var
+                              , write = w var
+                              , tryRead = tr var }
 
 makePieceHooks = do
   [sendGet, sendPut] <- CM.replicateM 2 (liftIO $ newEmptyTMVarIO)
@@ -286,11 +294,11 @@ makeStreams (PieceHooks {..}) getFileFixer = do
   notifyIH <- newEmptyTMVarIO 
   let sharedIH = stmShared takeTMVar putTMVar tryTakeTMVar notifyIH
   return $ ((btStreamHandler $ recvStream getFileFixer 
-                                   (write recvPiece)
-                                   (read sharedIH))
-           , btStreamHandler $ sendStream (liftIO . (write sendGetPiece))
-                                   (liftIO $ read sendPutBack)
-                                   (liftIO . (write sharedIH)))
+                                   (atomically . write recvPiece)
+                                   (atomically $ read sharedIH))
+           , btStreamHandler $ sendStream (liftIO . atomically . (write sendGetPiece))
+                                   (liftIO $ atomically $ read sendPutBack)
+                                   (liftIO . atomically . (write sharedIH)))
 
 btStreamHandler transform = (mkConduitGet handleStreamFail (get :: Get BT.StreamChunk)
                              >> DC.map BT.Unparsed)
@@ -298,8 +306,7 @@ btStreamHandler transform = (mkConduitGet handleStreamFail (get :: Get BT.Stream
                           =$ transform
                           =$ conduitPut (put :: Putter BT.StreamChunk)
 
-handleStreamFail _ = DC.mapM (\bs -> return (unsafePerformIO $ P.putStrLn "stream fail")
-                                     >> return $ BT.Unparsed bs)
+handleStreamFail _ = DC.map BT.Unparsed
 
 type LoadBlock = (Int, BT.Block) -> ByteString 
 

@@ -291,3 +291,14 @@ runTorrentClientScript = do
   return ()
 
 archMagnet = "magnet:?xt=urn:btih:67f4bcecdca3e046c4dc759c9e5bfb2c48d277b0&dn=archlinux-2014.03.01-dual.iso&tr=udp://tracker.archlinux.org:6969&tr=http://tracker.archlinux.org:6969/announce"
+
+
+
+---- various toy functions
+
+{-
+tryAsyncInterrupt = do
+  take <- newTMVarIO 1
+  put <- newEmptyTMVarIO
+  async $ P.putStrLn "hello"
+-}

@@ -242,7 +242,7 @@ serverBTClientConfig = BTClientConfig {
 
 tryBogus = do
   P.putStrLn "bogus" 
-  withFile "../demo/contactFile/realStream" ReadMode $ \h -> do
+  withFile "../demo/contactFile/trackerCapture" ReadMode $ \h -> do
 --    DC.sourceList ["omfg"]
     (sourceHandle h =$ CBin.isolate 302 >> DC.yield "junkie and shit innit")
       =$ btStreamHandler (DC.map id) $$ DC.consume
