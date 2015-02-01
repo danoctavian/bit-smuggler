@@ -56,7 +56,7 @@ torrentFilePath = "../contactFile/testFile.torrent"
 torrentProcPath = "utorrent-client"
 cachePath = "cache"
 
-testServerIP = [5,151,211,73]
+testServerIP = [5,151,211,20]
 
 uTorrentConnect host port = UT.makeUTorrentConn host port ("admin", "")
 

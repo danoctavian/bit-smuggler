@@ -6,12 +6,17 @@ module Network.BitSmuggler.TorrentFile (
   , textToInfoHash
   , makeBlockLoader
   , makePartial
+  , infoHashToString
+  , textToInfoHash
 ) where
 
 import Crypto.Hash.SHA1 as SHA1
 import Data.ByteString as BS
+import Data.ByteString.Char8 as BSC
+
 import qualified Data.ByteString.Lazy as BSL
 
+import Data.Serialize as DS
 import Data.Torrent
 import Data.Conduit.Binary as DCB
 import Data.Conduit as DC
@@ -31,6 +36,8 @@ import Data.ByteString.Base16 as Base16
 
 import Network.BitSmuggler.BitTorrentParser
 import Network.BitSmuggler.Utils
+
+import Network.BitTorrent.Types
 
 {-
 
@@ -52,17 +59,6 @@ computeInfoHash :: Torrent -> ByteString
 computeInfoHash
   = SHA1.hash . BSL.toStrict . bPack
     . (\(BDict d) -> fromJust $ M.lookup "info" d) . serializeTorrent
-
-
-textToInfoHash :: Text -> Maybe ByteString 
-textToInfoHash text
-    | hashLen == 40 = if BS.length inv == 0 then Just ihStr else Nothing
-    | otherwise = Nothing
-  where
-    hashLen = BS.length hashStr
-    hashStr = T.encodeUtf8 text
-    (ihStr, inv) = Base16.decode hashStr
-
 
 {-
   constructs a partial torrent file from a full one

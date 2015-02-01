@@ -54,7 +54,7 @@ import Control.Monad.Trans.Maybe
 import Control.Concurrent.Async
 import Control.Retry
 import qualified Control.Monad.Catch as Catch
-import Network.BitTorrent.ClientControl (PortNum, InfoHash)
+import Network.BitTorrent.Types (PortNum, InfoHash)
 
 -- bitsmuggler logger
 

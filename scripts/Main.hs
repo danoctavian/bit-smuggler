@@ -33,7 +33,7 @@ import Data.Conduit as DC
 import Data.Conduit.List as DC
 import Data.Conduit.Network
 
-import Network.BitTorrent.Shepherd as Tracker
+import qualified Network.BitTorrent.Shepherd as Tracker
 import Network.BitTorrent.ClientControl
 import Network.BitTorrent.ClientControl.UTorrent
 import Network.BitSmuggler.BitTorrentSimulator as Sim
@@ -160,10 +160,11 @@ peerSeedTalk seedPath peerPath dataFilePath tFilePath = runResourceT $ do
     shelly $ cp dataFilePath seedPath --place file to be seeded
 
   trackEvents <- liftIO $ newTChanIO 
-  tracker <- allocAsync $ async $ runTracker
-                        $ Tracker.Config {listenPort = 6666, events = Just trackEvents}
+  tracker <- allocAsync $ async $ Tracker.runTracker
+                        $ Tracker.Config { Tracker.listenPort = 6666
+                                         , Tracker.events = Just trackEvents}
 
-  liftIO $ waitFor (== Booting) trackEvents
+  liftIO $ waitFor (== Tracker.Booting) trackEvents
   liftIO $ debugM logger "tracker is booting"
 
 --  liftIO $ threadDelay $ 2 * milli
@@ -175,7 +176,7 @@ peerSeedTalk seedPath peerPath dataFilePath tFilePath = runResourceT $ do
   seedConn <- liftIO $ makeUTorrentConn localhost webUIPortSeed  utorrentDefCreds
   liftIO $ addTorrentFile seedConn $ pathToString tFilePath
 
-  liftIO $ waitFor (\(AnnounceEv a) -> True) trackEvents
+  liftIO $ waitFor (\(Tracker.AnnounceEv a) -> True) trackEvents
   liftIO $ debugM logger "got announce"
   -- sleep for a while until that is announced; ideally i should put
 
@@ -279,12 +280,14 @@ runTorrentClientScript = do
   conn <- makeUTorrentConn "127.0.0.1" 9000  ("admin", "")
   debugM logger "made first connection"
 
+  addMagnetLink conn archMagnet
+  pauseTorrent conn 593483888932971759637666321247479059714797631408 
 {-
   r3 <- setSettings conn [UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, UTP True, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1080, ProxyP2P True]
   debugM logger $ show $  r3
-  torrentFile <-return "/home/dan/testdata/sample100.torrent"
- -- addMagnetLink conn archMagnet
   addTorrentFile conn torrentFile
+
+  torrentFile <-return "/home/dan/testdata/sample100.torrent"
 -}
   r <- listTorrents conn
   debugM logger $ "list of torrents  is  " ++  (show r)
