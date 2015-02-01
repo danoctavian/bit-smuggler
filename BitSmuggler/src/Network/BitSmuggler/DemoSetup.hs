@@ -252,13 +252,3 @@ tryBogus = do
       =$ btStreamHandler (DC.map id) $$ DC.consume
 
 
-
-tryMaybeBitTorrentProxy = do
-  
-  Proxy.run $ Proxy.Config {
-                proxyPort = 1100
-              , initHook = (\ _ _ -> return $ DataHooks idleHook idleHook (return ()))
-              , handshake = Socks4.serverProtocol
-           }
-
-idleHook = btStreamHandler (DC.map P.id)

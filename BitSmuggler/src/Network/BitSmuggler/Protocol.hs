@@ -353,6 +353,11 @@ chunkStream onHandshake otherwise = do
   upstream <- await
   case upstream of
     Just hs@(BT.HandShake _ _ _) -> leftover hs >> onHandshake hs
+
+    -- this is to treat the case in which it's not a bittorrent connection
+    -- we are just proxying unparsed chunks;
+    Just u@(BT.Unparsed m) -> DC.yield u >> chunkStream onHandshake otherwise
+
     Just other -> leftover other >> otherwise
     Nothing -> return ()
 

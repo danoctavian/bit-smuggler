@@ -39,6 +39,8 @@ import Network.BitTorrent.ClientControl.UTorrent
 import Network.BitSmuggler.BitTorrentSimulator as Sim
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.Common
+import Network.BitSmuggler.Protocol
+
 import Data.Serialize as DS
 import Control.Concurrent
 import Control.Concurrent.Async
@@ -90,7 +92,7 @@ receiverPeer = do
 initCaptureHook incFile outFile a1 a2 = do
   incHook <- captureHook incFile
   outHook <- captureHook outFile
-  return $ DataHooks incHook outHook (return ())
+  return $ DataHooks (idleHook =$ incHook) (idleHook =$ outHook) (return ())
 
 --captureHook :: Sys.FilePath -> IO (BS.ByteString -> IO BS.ByteString)
 captureHook file = do
@@ -100,7 +102,7 @@ captureHook file = do
   debugM logger $ "setting up capture for " P.++ file
   forkIO $ do
     withFile (file P.++ (show r)) WriteMode $ \fileH -> do
-      sourceTQueue tQueue {- =$ (CL.map (DS.encode . NetworkChunk))-}   $$ sinkHandle fileH
+      sourceTQueue tQueue =$ (CL.map (DS.encode . NetworkChunk))  $$ sinkHandle fileH
   debugM logger $ "done setting up capture"
  
   return $ awaitForever
@@ -171,7 +173,7 @@ peerSeedTalk seedPath peerPath dataFilePath tFilePath = runResourceT $ do
 
   liftIO $ debugM logger "launching seeder..."
   seeder <- allocAsync $ runUTClient seedPath
-  liftIO $ threadDelay $ 1 * milli
+  liftIO $ threadDelay $ 2 * milli
   liftIO $ debugM logger "launched seeder"
   seedConn <- liftIO $ makeUTorrentConn localhost webUIPortSeed  utorrentDefCreds
   liftIO $ addTorrentFile seedConn $ pathToString tFilePath
@@ -244,13 +246,20 @@ revProxy ip port = return $ ProxyAction {
                     }
 
 
+tryMaybeBitTorrentProxy port = do
+  Proxy.run $ Proxy.Config {
+                proxyPort = port
+              , initHook = (\ _ _ -> return $ DataHooks idleHook idleHook (return ()))
+              , handshake = Socks4.serverProtocol
+           }
 
+idleHook = btStreamHandler (DC.map P.id)
 
 
 
 -- this is so stupid I don't even..
 pathToString ::Sh.FilePath -> String
-pathToString fp = read . P.drop (P.length $ ("FilePath " :: String)) .  show $ fp 
+pathToString fp = P.read . P.drop (P.length $ ("FilePath " :: String)) .  show $ fp 
 
 -- careful with utserver failure - utserver fails "silently"
 -- returning 0 even when it fails to read params
