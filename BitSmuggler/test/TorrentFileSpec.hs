@@ -22,6 +22,7 @@ import Control.Monad
 import System.FilePath
 import Data.Torrent
 import Data.Maybe
+import Data.BEncode
 
 import Network.BitSmuggler.TorrentFile as TF
 import Network.BitSmuggler.BitTorrentParser as BT
@@ -45,6 +46,15 @@ torrentStream = "test-data/seedClientCapture"
 
 spec :: Spec
 spec = do
+
+{-
+  this doesn't pass cause the parser throws away some fields
+  describe "BitTorrent file parser" $ do
+    it "parses and serializes correctly" $ do
+      torrentFileContent <- BSL.readFile dataFileMediumTFile 
+      let (Right torrentFile) = readTorrent torrentFileContent
+      (bPack $ serializeTorrent $ torrentFile) `shouldBe` torrentFileContent
+-}
 
   describe "BitTorrentParser" $ do
     it "parses the right number of pieces" $ do
@@ -71,8 +81,7 @@ spec = do
 
 -- TODO: readd these test cases after you fix the function 
 -- at this point it's unclear why it doesn't work
---           , (dataFileMediumTFile, "ca886d7843c73b182292d4594e7148de208bd571")
---           , ("test-data/yetAnotherTFile.torrent", "538c49c317dfdf0ea8c170bd521397aa713fe3fa")
+--           , (dataFileMediumTFile, "f921dd6548298527d40757fb264de07f7a47767f")
 
        ] $ \(filePath, expectedHash) -> do
           (Right torrentFile) <- fmap readTorrent $ BSL.readFile dataFileSmallTFile

@@ -24,6 +24,10 @@ import Control.Concurrent.Async
 import Control.Exception.Base
 import Control.Monad
 
+import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature)
+import Network.TCP.Proxy.Socks4 as Socks4
+
+
 import Data.Conduit as DC
 import Data.Conduit.List as DC
 import Data.Conduit.Binary as CBin
@@ -56,7 +60,7 @@ torrentFilePath = "../contactFile/testFile.torrent"
 torrentProcPath = "utorrent-client"
 cachePath = "cache"
 
-testServerIP = [5,151,211,20]
+testServerIP = [5,151,211,40]
 
 uTorrentConnect host port = UT.makeUTorrentConn host port ("admin", "")
 
@@ -204,7 +208,7 @@ makeContactFile filePath = do
   Right t <- fmap readTorrent $ BSL.readFile $ filePath
   return $ FakeFile {seed = 23456, torrentFile = t
                     , infoHash = fromRight $ DS.decode $ fromJust $ textToInfoHash
-                                  "ca886d7843c73b182292d4594e7148de208bd571"}
+                                  "f921dd6548298527d40757fb264de07f7a47767f"}
   --fromRight $ DS.decode $ computeInfoHash t}
 
 
@@ -247,3 +251,14 @@ tryBogus = do
     (sourceHandle h =$ CBin.isolate 302 >> DC.yield "junkie and shit innit")
       =$ btStreamHandler (DC.map id) $$ DC.consume
 
+
+
+tryMaybeBitTorrentProxy = do
+  
+  Proxy.run $ Proxy.Config {
+                proxyPort = 1100
+              , initHook = (\ _ _ -> return $ DataHooks idleHook idleHook (return ()))
+              , handshake = Socks4.serverProtocol
+           }
+
+idleHook = btStreamHandler (DC.map P.id)

@@ -213,13 +213,18 @@ addTorrents btClientConn btProc files = do
         liftIO $ BS.hPutStr  handle (BSL.toStrict $ bPack $ serializeTorrent torrentFile)
         liftIO $ hClose handle
 
+
         liftIO $ debugM logger $ "telling  the bt client to use " P.++ (show dataFile)
+        liftIO $ debugM logger $ "with torrent file " P.++ (show path)
+
         liftIO $ addTorrentFile btClientConn path
 
         -- wait for it to upload
-        retrying (constantDelay $ 10 ^ 5 * 5) (\_ isUploaded -> return $ not isUploaded) $
-          (liftIO $ listTorrents btClientConn)
-          >>= (return . (P.elem infoHash) . P.map torrentID)
+        retrying (constantDelay $ 10 ^ 5 * 5) (\_ isUploaded -> return $ not isUploaded) $ do
+          torrentList <- (liftIO $ listTorrents btClientConn)
+          liftIO $ debugM logger $ "current torrent list is" P.++ (show torrentList)
+          return $ (P.elem infoHash) . P.map torrentID $ torrentList
+
         liftIO $ debugM logger $ "finished adding file" P.++ (show dataFile)
 
   return ()

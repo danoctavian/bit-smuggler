@@ -137,6 +137,7 @@ Test-Suite spec
                    , bytestring-arbitrary >=0.0.3 && <0.1
                    , async >=2.0.1 && <2.1
                    , stm >=2.4.3 && <2.5
+                   , bencode >=0.5 && <0.6
 
 
 
