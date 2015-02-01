@@ -8,6 +8,7 @@ module Network.BitSmuggler.BitTorrentSimulator (
   , clientConn
   , NetworkChunk (..)
   , ConnectionData (..)
+  , echoServer
   )where
 
 import Prelude as P
@@ -37,7 +38,8 @@ import Control.Concurrent.Async
 import Control.Exception
 import Data.Conduit as DC
 import Data.Conduit.Cereal
-import Data.Conduit.List as CL
+import Data.Conduit.List as DC
+import Data.Conduit.Binary as DCB
 import Data.Maybe
 import Network.TCP.Proxy.Client
 import Network.TCP.Proxy.Socks4 as Socks4
@@ -236,6 +238,17 @@ doTorrent cmdChan connData = do
   debugM logger $ "attempting connection to " P.++ (show $ peerAddr cd) P.++
                   " through the proxy with address " P.++ (show $ proxyAddr cd)
 
+  -- emulating a connection that's not bittorrent (smth like a tracker or DHT query)
+
+  runProxyTCPClient (BSC.pack . fst . proxyAddr $ cd) (snd . proxyAddr $ cd)
+     (Socks4.clientProtocol (read . fst . trackerAddr $ cd, snd . trackerAddr $ cd) CONNECT)
+      $ \sink resSrc remoteConn -> do
+        DC.sourceList [echoRequest] $$ sink
+        (_, echoed) <- resSrc $$++ DCB.take (BS.length echoResponse)
+        assert (echoResponse == BSL.toStrict echoed) (return ())
+        return ()
+  threadDelay $ 10 ^ 6
+
   -- emulating disconnects
   forM [AfterNMsgs 40, Never] $ \disconnect -> do
     runProxyTCPClient (BSC.pack . fst . proxyAddr $ cd) (snd . proxyAddr $ cd)
@@ -256,7 +269,7 @@ dumpChunkFile file sink cmdChan disconnect = do
 
 
 data DisconnectEvent  = Never | AfterNMsgs Int
-connCutter Never = CL.map P.id
+connCutter Never = DC.map P.id
 -- cut one time after msgs messages
 connCutter (AfterNMsgs msgs) = go 0
   where
@@ -308,7 +321,8 @@ data ConnectionData = ConnectionData {
                                        connTorrent :: Torrent
                                      , dataFile :: FilePath
                                      , peerAddr :: (String, Word16)
-                                     , proxyAddr :: (String, Word16)}
+                                     , proxyAddr :: (String, Word16)
+                                     , trackerAddr :: (String, Word16)}
   deriving (Show)
 
 
@@ -318,46 +332,13 @@ data TorrentHandler = TorrentHandler {
 }
 
 
-testHash = Bin.decode $ BSL.replicate 20 0
-testDataFile = "/home/dan/repos/bitSmuggler/bit-smuggler/testdata/smallCapture0"
+echoRequest = "this my echo request"
+echoResponse ="this it, the response"
+-- used a poor imitation of a tracker
+echoServer port = do
+  runTCPServer (serverSettings (fromIntegral port) "*") $ \appData -> do
+    req <- (appSource appData) $$ DCB.take (BS.length echoRequest)
+    assert (echoRequest == toStrict req) (return ())
+    DC.sourceList [echoResponse] $$ (appSink appData)
+    return ()
 
-testTFile = "/home/dan/repos/bitSmuggler/bit-smuggler/testdata/noxexistant.torrent"
-
-
-testResourceMap = Map.fromList [(Left testTFile, testConnData)]
-
-initiatorConf = Network.BitSmuggler.BitTorrentSimulator.Config {resourceMap = testResourceMap, rpcPort = 2015, peerPort = 3001, respSource = testDataFile}
-
-testConnData = ConnectionData {connTorrent = Torrent  testHash "this is the filename"
-                              , dataFile = testDataFile
-                              , peerAddr = (localhost, peerPort receiverConf)
-                              , proxyAddr = (localhost, 1080)}
-
-
-receiverConf = Network.BitSmuggler.BitTorrentSimulator.Config {
-                      resourceMap = testResourceMap
-                      , rpcPort = 2016, peerPort = 3002, respSource = testDataFile}
-
-
-initiatorPeer = do
-  updateGlobalLogger logger  (setLevel DEBUG)
-  runClient initiatorConf
-
-receiverPeer = do
-  updateGlobalLogger logger  (setLevel DEBUG)
-  runClient receiverConf
-
-tellStop = do
-  c <- clientConn localhost (rpcPort initiatorConf)
-  removeTorrent c testHash
-
-tellInitiator = do
-  updateGlobalLogger logger  (setLevel DEBUG)
-  c <- clientConn localhost (rpcPort initiatorConf)
-  addTorrentFile c testTFile
-  lr <- listTorrents c
-  debugM logger (show lr)
-  P.getLine 
-  removeTorrent c testHash
-
-  

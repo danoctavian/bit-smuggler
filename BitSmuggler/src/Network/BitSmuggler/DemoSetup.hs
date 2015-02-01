@@ -113,16 +113,18 @@ setupFileCache path torrentFilePath dataFilePath = do
 
 -- does it work ?
 runFullDemo = do
+  let trackerPort = 1337
+  tracker <- async $ echoServer trackerPort
   server <- async $ runDemoServer
   threadDelay $ 10 ^ 6 * 5
-  client <- async $ runDemoClient
+  client <- async $ runDemoClient trackerPort
 
   waitBoth server client
   debugM logger "finished demo"
   return ()
 
 
-runDemoClient = do
+runDemoClient trackerPort = do
   updateGlobalLogger logger  (setLevel DEBUG)
 
   contact <- makeContactFile testTFile
@@ -137,7 +139,8 @@ runDemoClient = do
               -- no need for iptables redirection: we tell the bittorrent simulator
               -- to connect straight to the reverse proxy
             , peerAddr = (localhost, revProxyPort serverBTClientConfig)
-            , proxyAddr = (localhost, socksProxyPort clientBTClientConfig)}
+            , proxyAddr = (localhost, socksProxyPort clientBTClientConfig)
+            , trackerAddr = (localhost, trackerPort)}
 
   proc <- simulatorProc clientBTRoot
            (Map.fromList [(Left $ takeFileName testDataFile, connData)])  streamFile
