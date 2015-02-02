@@ -12,6 +12,7 @@ module Network.BitSmuggler.Utils (
   , if'
   , sourceTQueue
   , sinkTQueue
+  , conduitBytes
   , alwaysRetry
   , allocAsync
   , allocLinkedAsync
@@ -143,6 +144,9 @@ sourceTQueue chan = forever $ (liftIO $ atomically $ readTQueue chan) >>= DC.yie
 
 sinkTQueue :: MonadIO m => TQueue a -> Sink a m ()
 sinkTQueue queue = awaitForever (\item -> liftIO $ atomically $ writeTQueue queue item)
+
+conduitBytes :: Monad m =>  Conduit ByteString m Word8 
+conduitBytes = awaitForever (\bs -> forM (BS.unpack bs) DC.yield)
 
 
 -- PortNum from Network.Socket always assumes that whatever value

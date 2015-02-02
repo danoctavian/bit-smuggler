@@ -27,8 +27,7 @@ import Data.BEncode
 import Network.BitSmuggler.TorrentFile as TF
 import Network.BitSmuggler.BitTorrentParser as BT
 import qualified Network.BitSmuggler.Protocol as Proto
-
-
+import Network.BitSmuggler.Utils
 
 main :: IO ()
 main = hspec spec
@@ -42,6 +41,7 @@ dataFileMediumTFile = "test-data/testFile.torrent"
 
 torrentStream = "test-data/seedClientCapture"
 
+trackerCapture = "test-data/trackerCapture"
 
 
 spec :: Spec
@@ -57,6 +57,16 @@ spec = do
 -}
 
   describe "BitTorrentParser" $ do
+    it "parses and serializes the stream correctly" $ do
+      forM [trackerCapture, torrentStream] $ \file -> do
+        identical <- runResourceT $ do
+          sequenceSources 
+            [ sourceFile file =$ Proto.btStreamHandler (DCL.map id) =$ conduitBytes
+            , sourceFile file =$ conduitBytes]
+            $$ DCL.fold (\isSame [b1, b2] -> b1 == b2 && isSame) True
+        identical `shouldBe` True
+      return ()
+
     it "parses the right number of pieces" $ do
       -- this test is pretty weak. consider for removal 
       (Right torrentFile) <- fmap readTorrent $ BSL.readFile dataFileSmallTFile

@@ -316,6 +316,7 @@ sendStream putPiece getPiece notifyIH
   = chunkStream (\hs -> (notifyIH $ hsInfoHash hs) >> loop) loop
     where
       loop = awaitForPiece $ \p -> do
+               debugM logger "got a piece to send out"
                putPiece (BT.block p)
                updatedP <- getPiece 
                assert (BS.length updatedP == BS.length (BT.block p)) (return ())
@@ -325,7 +326,9 @@ recvStream :: (InfoHash -> IO (Maybe LoadBlock))
               -> (ByteString -> IO ()) -> (IO InfoHash)
               -> ConduitM BT.StreamChunk BT.StreamChunk IO ()
 recvStream getBlockLoader putRecv readIH
-  = chunkStream (loop . hsInfoHash) ((liftIO $ readIH) >>= loop)
+  = chunkStream (loop . hsInfoHash)
+                 ((liftIO $ debugM logger "waiting for IH from other thread...")
+                  >> (liftIO $ readIH) >>= loop)
     where
       loop ih = do
         liftIO $ debugM logger $ " *** the stream has infohash " P.++ (show ih)
@@ -352,13 +355,22 @@ fixPiece p@(BT.Piece {..}) loadBlock =
 chunkStream onHandshake otherwise = do
   upstream <- await
   case upstream of
-    Just hs@(BT.HandShake _ _ _) -> leftover hs >> onHandshake hs
+    Just hs@(BT.HandShake _ _ _) -> do
+      liftIO $ debugM logger $ "parsed handshake " ++ (show hs)
+      leftover hs
+      onHandshake hs
 
     -- this is to treat the case in which it's not a bittorrent connection
     -- we are just proxying unparsed chunks;
-    Just u@(BT.Unparsed m) -> DC.yield u >> chunkStream onHandshake otherwise
+    Just u@(BT.Unparsed m) -> do
+      liftIO $ debugM logger $ "got unparsed chunk"
+      DC.yield u
+      chunkStream onHandshake otherwise
 
-    Just other -> leftover other >> otherwise
+    Just other -> do
+      leftover other
+      liftIO $ debugM logger $ "no handshake this time so reading from other thread "
+      otherwise
     Nothing -> return ()
 
 hsInfoHash (BT.HandShake _ ih _) = ih
