@@ -24,7 +24,7 @@ import Control.Concurrent.Async
 import Control.Exception.Base
 import Control.Monad
 
-import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature)
+import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature, logger)
 import Network.TCP.Proxy.Socks4 as Socks4
 
 

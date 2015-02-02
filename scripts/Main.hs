@@ -2,7 +2,6 @@
 
 import Prelude as P
 
-import Network.TCP.Proxy.Server
 import Data.Binary as Bin
 
 import Data.ByteString as BS
@@ -19,7 +18,7 @@ import System.Random
 
 import Network.TCP.Proxy.Client
 import Network.TCP.Proxy.Socks4 as Socks4
-import Network.TCP.Proxy.Server as Proxy
+import qualified Network.TCP.Proxy.Server as Proxy
 import Data.Map.Strict as Map
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM.TVar
@@ -92,7 +91,7 @@ receiverPeer = do
 initCaptureHook incFile outFile a1 a2 = do
   incHook <- captureHook incFile
   outHook <- captureHook outFile
-  return $ DataHooks (idleHook =$ incHook) (idleHook =$ outHook) (return ())
+  return $ Proxy.DataHooks (idleHook =$ incHook) (idleHook =$ outHook) (return ())
 
 --captureHook :: Sys.FilePath -> IO (BS.ByteString -> IO BS.ByteString)
 captureHook file = do
@@ -111,18 +110,19 @@ captureHook file = do
 
 trafficCapture = do
 --  updateGlobalLogger logger  (setLevel DEBUG)
-  Proxy.run $ Proxy.Config { proxyPort = 1080
-            , initHook =  initCaptureHook "incomingCapture" "outgoingCapture"
-            , handshake = Socks4.serverProtocol
+  Proxy.run $ Proxy.Config { Proxy.proxyPort = 1080
+            , Proxy.initHook =  initCaptureHook "incomingCapture" "outgoingCapture"
+            , Proxy.handshake = Socks4.serverProtocol
        }
 
 printChunk = awaitForever $
                 \bs -> (liftIO $ debugM logger (show $ BS.length bs)) >> DC.yield bs
 
 trafficProxy = do
-  Proxy.run $ Proxy.Config { proxyPort = 1080
-            , initHook = (\_ _ -> return $ DataHooks printChunk printChunk (return ())) 
-            , handshake = Socks4.serverProtocol
+  Proxy.run $ Proxy.Config { Proxy.proxyPort = 1080
+            , Proxy.initHook
+               = (\_ _ -> return $ Proxy.DataHooks printChunk printChunk (return ())) 
+            , Proxy.handshake = Socks4.serverProtocol
        }
 
 uTorrentStateFiles :: [String]
@@ -218,40 +218,43 @@ testTCPServer = runTCPServer (serverSettings testTCPSrcPort "*") $ \app -> do
 
 runSimpleProxy = do
   updateGlobalLogger logger (setLevel DEBUG)
+  updateGlobalLogger Proxy.logger (setLevel DEBUG)
 
-  Proxy.run $  Proxy.Config { proxyPort = 1080
-          , initHook = \_ _ -> return DataHooks { incoming = DC.map P.id
-                                                , outgoing = DC.map P.id
-                                                , onDisconnect = return ()
+
+  Proxy.run $  Proxy.Config { Proxy.proxyPort = 1080
+          , Proxy.initHook = \_ _ -> debugM logger "wtf this ran now" >> return Proxy.DataHooks { Proxy.incoming = DC.map P.id
+                                                , Proxy.outgoing = DC.map P.id
+                                                , Proxy.onDisconnect = return ()
                                                }
-          , handshake = Socks4.serverProtocol
+          , Proxy.handshake = Socks4.serverProtocol
      }
 
 runSimpleRevProxy ip port = do
   updateGlobalLogger logger (setLevel DEBUG)
 
-  Proxy.run $  Proxy.Config { proxyPort = 2002
-          , initHook = \_ _ -> return DataHooks { incoming = DC.map P.id
-                                                , outgoing = DC.map P.id
-                                                , onDisconnect = return ()
+  Proxy.run $  Proxy.Config { Proxy.proxyPort = 2002
+          , Proxy.initHook = \_ _ -> return Proxy.DataHooks { Proxy.incoming = DC.map P.id
+                                                , Proxy.outgoing = DC.map P.id
+                                                , Proxy.onDisconnect = return ()
                                                }
-          , handshake = revProxy ip port
+          , Proxy.handshake = revProxy ip port
      }
 
 runTestRev = runSimpleRevProxy (IPv4 $ toIPv4 [127, 0, 0, 1]) 7882
 
-revProxy ip port = return $ ProxyAction {
+revProxy ip port = return $ Proxy.ProxyAction {
                       Proxy.command = CONNECT
-                    , remoteAddr = (Right ip, port)
-                    , onConnection = \ _ -> return ()
+                    , Proxy.remoteAddr = (Right ip, port)
+                    , Proxy.onConnection = \ _ -> return ()
                     }
 
 
 tryMaybeBitTorrentProxy port = do
   Proxy.run $ Proxy.Config {
-                proxyPort = port
-              , initHook = (\ _ _ -> return $ DataHooks idleHook idleHook (return ()))
-              , handshake = Socks4.serverProtocol
+                Proxy.proxyPort = port
+              , Proxy.initHook
+                  = (\ _ _ -> return $ Proxy.DataHooks idleHook idleHook (return ()))
+              , Proxy.handshake = Socks4.serverProtocol
            }
 
 idleHook = btStreamHandler (DC.map P.id)

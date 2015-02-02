@@ -56,7 +56,7 @@ import Network.BitSmuggler.TorrentClientProc as TC
 import Network.BitSmuggler.FileCache as FC
 import Network.BitSmuggler.TorrentFile
 
-import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature)
+import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature, logger)
 import Network.TCP.Proxy.Socks4 as Socks4
 
 {- 

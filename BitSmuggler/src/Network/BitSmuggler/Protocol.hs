@@ -296,9 +296,16 @@ makeStreams (PieceHooks {..}) getFileFixer = do
   return $ ((btStreamHandler $ recvStream getFileFixer 
                                    (atomically . write recvPiece)
                                    (atomically $ read sharedIH))
-           , btStreamHandler $ sendStream (liftIO . atomically . (write sendGetPiece))
+              =$ (DC.mapM (\bs -> do
+                              debugM logger $ "sending to btclient " ++ show bs
+                              return bs
+                          ))
+           , (DC.mapM (\bs -> do
+               debugM logger $ "coming from bt client " ++ show bs
+               return bs
+              )) =$ (btStreamHandler $ sendStream (liftIO . atomically . (write sendGetPiece))
                                    (liftIO $ atomically $ read sendPutBack)
-                                   (liftIO . atomically . (write sharedIH)))
+                                   (liftIO . atomically . (write sharedIH))))
 
 -- the stream handler stops parsing when it can no longer 
 -- make sense of the stream and instead forwards Unparsed ByteStrings
@@ -363,7 +370,7 @@ chunkStream onHandshake otherwise = do
     -- this is to treat the case in which it's not a bittorrent connection
     -- we are just proxying unparsed chunks;
     Just u@(BT.Unparsed m) -> do
-      liftIO $ debugM logger $ "got unparsed chunk"
+      liftIO $ debugM logger $ "got unparsed chunk " ++ show m
       DC.yield u
       chunkStream onHandshake otherwise
 

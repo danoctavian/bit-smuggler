@@ -18,7 +18,7 @@ import Data.Conduit as DC
 import Data.Conduit.List as DC
 
 
-import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature)
+import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature, logger)
 
 import Network.BitSmuggler.Common
 import Network.BitSmuggler.Crypto as Crypto

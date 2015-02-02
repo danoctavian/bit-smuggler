@@ -28,7 +28,7 @@ import Crypto.Random
 import Data.Tuple as Tup
 import System.Timeout
 
-import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature)
+import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature, logger)
 import Network.TCP.Proxy.Socks4 as Socks4
 
 import Network.BitSmuggler.Common hiding (contactFiles)
