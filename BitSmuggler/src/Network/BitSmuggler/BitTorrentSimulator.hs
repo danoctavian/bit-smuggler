@@ -255,7 +255,7 @@ doTorrent cmdChan connData = do
   threadDelay $ 10 ^ 6
 
   -- emulating disconnects
-  forM [AfterNMsgs 40, Never] $ \disconnect -> do
+  forM [AfterNMsgs 50, Never] $ \disconnect -> do
     runProxyTCPClient (BSC.pack . fst . proxyAddr $ cd) (snd . proxyAddr $ cd)
       (Socks4.clientProtocol (read . fst . peerAddr $ cd, snd . peerAddr $ cd) CONNECT)
       $ \sink resSrc remoteConn -> do
