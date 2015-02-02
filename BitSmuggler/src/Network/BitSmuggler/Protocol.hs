@@ -316,7 +316,7 @@ sendStream putPiece getPiece notifyIH
   = chunkStream (\hs -> (notifyIH $ hsInfoHash hs) >> loop) loop
     where
       loop = awaitForPiece $ \p -> do
-               debugM logger "got a piece to send out"
+--               debugM logger "got a piece to send out"
                putPiece (BT.block p)
                updatedP <- getPiece 
                assert (BS.length updatedP == BS.length (BT.block p)) (return ())

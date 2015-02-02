@@ -21,6 +21,7 @@ import Data.Binary as Bin
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM.TVar
 import Control.Concurrent.STM
+import Control.Monad.Trans.Resource
 import Control.Monad
 import Control.Applicative
 import Control.Monad.Trans
@@ -162,8 +163,12 @@ listenForPeers respSource port = do
     debugM logger "received connection. draining socket.."
     cmdChan <- newTChanIO 
 
-    concurrently  (dumpChunkFile respSource (appSink appData) cmdChan Never)
-                  ((appSource appData) $$ awaitForever return)
+    concurrently 
+      (dumpChunkFile respSource (appSink appData) cmdChan Never)
+      (runResourceT $ sequenceSources [(appSource appData) =$ conduitBytes
+          , sourceFile respSource =$ conduitGet (DS.get :: DS.Get NetworkChunk)
+             =$ DC.map (\(NetworkChunk ch) -> ch) =$ conduitBytes]
+        $$ awaitForever (\[b1, b2] -> assert (b1 == b2) (return ())))
     return ()
 
 -- command server (rpc interface to send commands to the client)

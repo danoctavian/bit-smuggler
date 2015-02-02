@@ -102,7 +102,7 @@ captureHook file = do
   debugM logger $ "setting up capture for " P.++ file
   forkIO $ do
     withFile (file P.++ (show r)) WriteMode $ \fileH -> do
-      sourceTQueue tQueue =$ (CL.map (DS.encode . NetworkChunk))  $$ sinkHandle fileH
+      sourceTQueue tQueue {- =$ (CL.map (DS.encode . NetworkChunk)) -}  $$ sinkHandle fileH
   debugM logger $ "done setting up capture"
  
   return $ awaitForever
@@ -176,6 +176,7 @@ peerSeedTalk seedPath peerPath dataFilePath tFilePath = runResourceT $ do
   liftIO $ threadDelay $ 2 * milli
   liftIO $ debugM logger "launched seeder"
   seedConn <- liftIO $ makeUTorrentConn localhost webUIPortSeed  utorrentDefCreds
+--  liftIO $ setSettings peerConn [BindPort 
   liftIO $ addTorrentFile seedConn $ pathToString tFilePath
 
   liftIO $ waitFor (\(Tracker.AnnounceEv a) -> True) trackEvents
