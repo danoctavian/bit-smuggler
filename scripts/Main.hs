@@ -309,6 +309,34 @@ runTorrentClientScript = do
 archMagnet = "magnet:?xt=urn:btih:67f4bcecdca3e046c4dc759c9e5bfb2c48d277b0&dn=archlinux-2014.03.01-dual.iso&tr=udp://tracker.archlinux.org:6969&tr=http://tracker.archlinux.org:6969/announce"
 
 
+runClientWithSettings peerPath tFilePath dataFilePath  = do
+  let oldData = [FS.filename dataFilePath]
+  liftIO $ do
+    debugM logger $ show oldData
+    cleanUTorrentState peerPath oldData
+    shelly $ cp dataFilePath peerPath --place file to be seeded
+
+  liftIO $ debugM logger "launching peer..."
+  peer <- allocAsync $ runUTClient peerPath
+  liftIO $ threadDelay $ 2 * milli
+  liftIO $ debugM logger "launched peer"
+  peerConn <- liftIO $ makeUTorrentConn localhost webUIPortPeer  utorrentDefCreds
+  liftIO $ setSettings peerConn [BindPort 5881, UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, UTP True, LocalPeerDiscovery False]
+  liftIO $ addTorrentFile peerConn $ pathToString tFilePath
+  liftIO $ debugM logger "configured the client and told it to work on a file"
+  liftIO $ threadDelay $ 10 ^ 9
+
+testRunClientWithSettings = do
+  updateGlobalLogger logger  (setLevel DEBUG)
+  runResourceT $
+    runClientWithSettings "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_1"
+                       "../demo/localContact/testFile.torrent"
+                       "../demo/contactFile/testFile.txt"
+
+
+ 
+ 
+
 
 ---- various toy functions
 

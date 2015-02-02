@@ -291,21 +291,18 @@ makePieceHooks = do
 makeStreams (PieceHooks {..}) getFileFixer = do
   -- a tmvar used to notify the recv thread of the infohash of the stream
   -- in the case in which the send thread learns about it
-  notifyIH <- newEmptyTMVarIO 
-  let sharedIH = stmShared takeTMVar putTMVar tryTakeTMVar notifyIH
   return $ ((btStreamHandler $ recvStream getFileFixer 
                                    (atomically . write recvPiece)
-                                   (atomically $ read sharedIH))
               =$ (DC.mapM (\bs -> do
-                              debugM logger $ "sending to btclient " ++ show bs
+--                              debugM logger $ "sending to btclient " ++ show bs
                               return bs
                           ))
            , (DC.mapM (\bs -> do
-               debugM logger $ "coming from bt client " ++ show bs
+--               debugM logger $ "coming from bt client " ++ show bs
                return bs
               )) =$ (btStreamHandler $ sendStream (liftIO . atomically . (write sendGetPiece))
                                    (liftIO $ atomically $ read sendPutBack)
-                                   (liftIO . atomically . (write sharedIH))))
+                                   )))
 
 -- the stream handler stops parsing when it can no longer 
 -- make sense of the stream and instead forwards Unparsed ByteStrings
@@ -319,8 +316,8 @@ handleStreamFail _ = DC.map BT.Unparsed
 
 type LoadBlock = (Int, BT.Block) -> ByteString 
 
-sendStream putPiece getPiece notifyIH
-  = chunkStream (\hs -> (notifyIH $ hsInfoHash hs) >> loop) loop
+sendStream putPiece getPiece 
+  = chunkStream (\ih -> loop)
     where
       loop = awaitForPiece $ \p -> do
 --               debugM logger "got a piece to send out"
@@ -330,12 +327,10 @@ sendStream putPiece getPiece notifyIH
                return $ (\b -> p {BT.block = b}) updatedP
 
 recvStream :: (InfoHash -> IO (Maybe LoadBlock))
-              -> (ByteString -> IO ()) -> (IO InfoHash)
+              -> (ByteString -> IO ()) 
               -> ConduitM BT.StreamChunk BT.StreamChunk IO ()
-recvStream getBlockLoader putRecv readIH
+recvStream getBlockLoader putRecv
   = chunkStream (loop . hsInfoHash)
-                 ((liftIO $ debugM logger "waiting for IH from other thread...")
-                  >> (liftIO $ readIH) >>= loop)
     where
       loop ih = do
         liftIO $ debugM logger $ " *** the stream has infohash " P.++ (show ih)
@@ -359,25 +354,20 @@ fixPiece p@(BT.Piece {..}) loadBlock =
   in p {BT.block = goodBlock}
 
 
-chunkStream onHandshake otherwise = do
+chunkStream postHandshake = do
   upstream <- await
   case upstream of
     Just hs@(BT.HandShake _ _ _) -> do
       liftIO $ debugM logger $ "parsed handshake " ++ (show hs)
       leftover hs
-      onHandshake hs
+      postHandshake hs
 
     -- this is to treat the case in which it's not a bittorrent connection
     -- we are just proxying unparsed chunks;
-    Just u@(BT.Unparsed m) -> do
-      liftIO $ debugM logger $ "got unparsed chunk " ++ show m
-      DC.yield u
-      chunkStream onHandshake otherwise
-
     Just other -> do
-      leftover other
-      liftIO $ debugM logger $ "no handshake this time so reading from other thread "
-      otherwise
+      DC.yield other
+      chunkStream postHandshake 
+     
     Nothing -> return ()
 
 hsInfoHash (BT.HandShake _ ih _) = ih

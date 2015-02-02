@@ -31,6 +31,7 @@ import Network.TCP.Proxy.Socks4 as Socks4
 import Data.Conduit as DC
 import Data.Conduit.List as DC
 import Data.Conduit.Binary as CBin
+import Data.Conduit.Network
 
 import Network.BitSmuggler.Common as Common
 import Network.BitSmuggler.Common as Protocol
@@ -254,4 +255,22 @@ tryBogus = do
     (sourceHandle h =$ CBin.isolate 302 >> DC.yield "junkie and shit innit")
       =$ btStreamHandler (DC.map id) $$ DC.consume
 
+socketPing ip port = do
+  runTCPClient (clientSettings port ip) $ \appData -> do
+    let btHS = "\DC3BitTorrent protocol\NUL\NUL\NUL\NUL\NUL\DLE\NUL\ENQ\249!\221eH)\133'\212\aW\251&M\224\DELzGv\DEL-UT330B-\ACKwM\194+N\187\t14\240\136"
+    let otherHS = "\DC3BitTorrent protocol\NUL\NUL\NUL\NUL\NUL\DLE\NUL\ENQ\249!\221eH)\133'\212\aW\251&M\224\DELzGv\DEL-UT330B-\ACKw\233'\186\EOT\210\152K\US;n"
+    DC.sourceList [otherHS] $$ (appSink appData)
+    debugM logger "sent out a protocol handshake. waiting for some reply..."
+    -- take anything at all as a response
+    forM [1..10] $ \_ -> do
+      byteResp <- (appSource appData) $$ CBin.take 68
+      debugM logger $ "resp is " ++ show byteResp
+      threadDelay $ 10 ^ 6
+    return ()
+
+runPing = do
+  updateGlobalLogger logger  (setLevel DEBUG)
+  socketPing "127.0.0.1" 5881
+   
+    
 
