@@ -43,16 +43,18 @@ load path = do
            else return (Map.empty)
   tvar <- newTVarIO files
   return $ FileCache {
-      lookup = \k -> (atomically $ readTVar tvar) >>= (return . Map.lookup k)
+      lookup = \k -> (atomically $ readTVar tvar)
+                      >>= (return . fmap (root </>) . Map.lookup k)
     , put  = \k source -> do
         map <- atomically $ readTVar tvar
         case Map.lookup k map of
-          Just path -> return path -- don't store again
+          Just path -> return $ root </> path -- don't store again
           Nothing -> do
             (path, handle) <- openTempFile root "file.data" 
             source $$ sinkHandle handle
             hClose handle
-            atomically $ modifyTVar tvar (Map.insert k path)
+            -- we're storing paths relative to the root directory
+            atomically $ modifyTVar tvar (Map.insert k $ makeRelative root path)
             return path
     , close = (atomically $ readTVar tvar) >>= BS.writeFile mapFilePath . encode
   } 
