@@ -125,7 +125,7 @@ setupBTClient config = do
                  and not circumvent them
       TODO: explain the rest of the settings
   -}
-  liftIO $ CC.setSettings conn [CC.BindPort (pubBitTorrentPort config), UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP localhost, ProxyPort (socksProxyPort config), ProxyP2P True]
+  liftIO $ CC.setSettings conn [CC.BindPort (pubBitTorrentPort config), UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, UTP False, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP localhost, ProxyPort (socksProxyPort config), ProxyP2P True]
 
   return ((proc, btClient), conn)
 

@@ -108,10 +108,11 @@ captureHook file = do
                (\bs -> (liftIO $ atomically $ writeTQueue tQueue bs) >> DC.yield bs)
  
 
-trafficCapture = do
+trafficCapture prefix port = do
 --  updateGlobalLogger logger  (setLevel DEBUG)
-  Proxy.run $ Proxy.Config { Proxy.proxyPort = 1080
-            , Proxy.initHook =  initCaptureHook "incomingCapture" "outgoingCapture"
+  Proxy.run $ Proxy.Config { Proxy.proxyPort = port
+            , Proxy.initHook =  initCaptureHook (prefix ++ "incomingCapture")
+                                                (prefix ++ "outgoingCapture")
             , Proxy.handshake = Socks4.serverProtocol
        }
 
@@ -148,18 +149,22 @@ testRun = do
   updateGlobalLogger logger (setLevel DEBUG)
   peerSeedTalk "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_0/"
                        "/home/dan/tools/bittorrent/utorrent-server-alpha-v3_3_1/"
-                       "../demo/contactFile/testFile.txt"
+                       "../demo/localContact/testFile.txt"
+                       "../demo/otherLocalContact/testFile.txt"
                        "../demo/localContact/testFile.torrent"
 
 -- script - 2 utorrent clients talk to get a file 
-peerSeedTalk :: Sh.FilePath -> Sh.FilePath -> Sh.FilePath -> Sh.FilePath -> IO ()
-peerSeedTalk seedPath peerPath dataFilePath tFilePath = runResourceT $ do
+peerSeedTalk :: Sh.FilePath -> Sh.FilePath -> Sh.FilePath ->
+                Sh.FilePath -> Sh.FilePath -> IO ()
+peerSeedTalk seedPath peerPath dataFilePath otherDataFilePath tFilePath = runResourceT $ do
   let oldData = [FS.filename dataFilePath]
   liftIO $ do
     debugM logger $ show oldData
     cleanUTorrentState seedPath oldData
     cleanUTorrentState peerPath oldData
     shelly $ cp dataFilePath seedPath --place file to be seeded
+    shelly $ cp otherDataFilePath peerPath --place file to be seeded
+
 
   trackEvents <- liftIO $ newTChanIO 
   tracker <- allocAsync $ async $ Tracker.runTracker
@@ -170,12 +175,18 @@ peerSeedTalk seedPath peerPath dataFilePath tFilePath = runResourceT $ do
   liftIO $ debugM logger "tracker is booting"
 
 --  liftIO $ threadDelay $ 2 * milli
+  proxy <- allocAsync $ async $ trafficCapture "seeder-" 1081
+  liftIO $ threadDelay $ 1 * milli
+
 
   liftIO $ debugM logger "launching seeder..."
   seeder <- allocAsync $ runUTClient seedPath
   liftIO $ threadDelay $ 2 * milli
   liftIO $ debugM logger "launched seeder"
   seedConn <- liftIO $ makeUTorrentConn localhost webUIPortSeed  utorrentDefCreds
+  liftIO $ setSettings seedConn [UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False,  LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1081, ProxyP2P True]
+
+
 --  liftIO $ setSettings peerConn [BindPort 
   liftIO $ addTorrentFile seedConn $ pathToString tFilePath
 
@@ -183,7 +194,7 @@ peerSeedTalk seedPath peerPath dataFilePath tFilePath = runResourceT $ do
   liftIO $ debugM logger "got announce"
   -- sleep for a while until that is announced; ideally i should put
 
-  proxy <- allocAsync $ async $ trafficCapture
+  proxy <- allocAsync $ async $ trafficCapture "peer-" 1080
   liftIO $ threadDelay $ 1 * milli
  
   peer <- allocAsync $ runUTClient peerPath
@@ -321,7 +332,7 @@ runClientWithSettings peerPath tFilePath dataFilePath  = do
   liftIO $ threadDelay $ 2 * milli
   liftIO $ debugM logger "launched peer"
   peerConn <- liftIO $ makeUTorrentConn localhost webUIPortPeer  utorrentDefCreds
-  liftIO $ setSettings peerConn [BindPort 5881, UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, LocalPeerDiscovery False]
+  liftIO $ setSettings peerConn [BindPort 5881, UPnP False, NATPMP False, UTP False, RandomizePort False, DHTForNewTorrents False, LocalPeerDiscovery False]
   liftIO $ addTorrentFile peerConn $ pathToString tFilePath
   liftIO $ debugM logger "configured the client and told it to work on a file"
   liftIO $ threadDelay $ 10 ^ 9
