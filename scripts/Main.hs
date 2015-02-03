@@ -184,7 +184,7 @@ peerSeedTalk seedPath peerPath dataFilePath otherDataFilePath tFilePath = runRes
   liftIO $ threadDelay $ 2 * milli
   liftIO $ debugM logger "launched seeder"
   seedConn <- liftIO $ makeUTorrentConn localhost webUIPortSeed  utorrentDefCreds
-  liftIO $ setSettings seedConn [UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False,  LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1081, ProxyP2P True]
+  liftIO $ setSettings seedConn [UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, TransportDisposition True False True False,  LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1081, ProxyP2P True]
 
 
 --  liftIO $ setSettings peerConn [BindPort 
@@ -203,7 +203,7 @@ peerSeedTalk seedPath peerPath dataFilePath otherDataFilePath tFilePath = runRes
 
   peerConn <- liftIO $ makeUTorrentConn localhost webUIPortPeer utorrentDefCreds
 
-  liftIO $ setSettings peerConn [UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, UTP True, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1080, ProxyP2P True]
+  liftIO $ setSettings peerConn [UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, TransportDisposition True False True False, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1080, ProxyP2P True]
 
   liftIO $ addTorrentFile peerConn $ pathToString tFilePath
  
@@ -216,7 +216,6 @@ peerSeedTalk seedPath peerPath dataFilePath otherDataFilePath tFilePath = runRes
   release $ fst tracker
 
   return ()
-
 
 testTCPClient = runTCPClient (clientSettings testTCPSrcPort "79.117.145.153") $ \app -> do
   P.putStrLn "connected"
@@ -332,7 +331,7 @@ runClientWithSettings peerPath tFilePath dataFilePath  = do
   liftIO $ threadDelay $ 2 * milli
   liftIO $ debugM logger "launched peer"
   peerConn <- liftIO $ makeUTorrentConn localhost webUIPortPeer  utorrentDefCreds
-  liftIO $ setSettings peerConn [BindPort 5881, UPnP False, NATPMP False, UTP False, RandomizePort False, DHTForNewTorrents False, LocalPeerDiscovery False]
+  liftIO $ setSettings peerConn [BindPort 5881, UPnP False, NATPMP False,  RandomizePort False, DHTForNewTorrents False, LocalPeerDiscovery False]
   liftIO $ addTorrentFile peerConn $ pathToString tFilePath
   liftIO $ debugM logger "configured the client and told it to work on a file"
   liftIO $ threadDelay $ 10 ^ 9

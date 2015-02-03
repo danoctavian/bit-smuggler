@@ -121,11 +121,15 @@ setupBTClient config = do
   {-
       Some of these settings are quirks of uTorrent so here the abstraction
       breaks. 
-      UTP True - normally means it uses UTP but here it makes uTorrent use the proxies
-                 and not circumvent them
+      UTP True on the client aside and no mention of UTP on the server side
       TODO: explain the rest of the settings
   -}
-  liftIO $ CC.setSettings conn [CC.BindPort (pubBitTorrentPort config), UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, UTP False, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP localhost, ProxyPort (socksProxyPort config), ProxyP2P True]
+  liftIO $ CC.setSettings conn [CC.BindPort (pubBitTorrentPort config)
+          , UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False
+          , TransportDisposition True False True False
+          , LocalPeerDiscovery False
+          , ProxySetType Socks4, ProxyIP localhost, ProxyPort (socksProxyPort config)
+          , ProxyP2P True]
 
   return ((proc, btClient), conn)
 
