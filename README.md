@@ -1,7 +1,9 @@
 bit-smuggler
 ============
 
-UNDER DEVELOPMENT - not runnable at the moment
+WARNING:
+not easy to run atm
+working on a 1-command setup
 
 pluggable transport for censorship circumvention
 
