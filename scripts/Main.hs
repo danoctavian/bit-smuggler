@@ -321,7 +321,7 @@ runClientWithSettings peerPath tFilePath dataFilePath  = do
   liftIO $ threadDelay $ 2 * milli
   liftIO $ debugM logger "launched peer"
   peerConn <- liftIO $ makeUTorrentConn localhost webUIPortPeer  utorrentDefCreds
-  liftIO $ setSettings peerConn [BindPort 5881, UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, UTP True, LocalPeerDiscovery False]
+  liftIO $ setSettings peerConn [BindPort 5881, UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, LocalPeerDiscovery False]
   liftIO $ addTorrentFile peerConn $ pathToString tFilePath
   liftIO $ debugM logger "configured the client and told it to work on a file"
   liftIO $ threadDelay $ 10 ^ 9

@@ -294,11 +294,11 @@ makeStreams (PieceHooks {..}) getFileFixer = do
   return $ ((btStreamHandler $ recvStream getFileFixer 
                                    (atomically . write recvPiece)
               =$ (DC.mapM (\bs -> do
---                              debugM logger $ "sending to btclient " ++ show bs
+                              debugM logger $ "sending to btclient " ++ show bs
                               return bs
                           ))
            , (DC.mapM (\bs -> do
---               debugM logger $ "coming from bt client " ++ show bs
+               debugM logger $ "coming from bt client " ++ show bs
                return bs
               )) =$ (btStreamHandler $ sendStream (liftIO . atomically . (write sendGetPiece))
                                    (liftIO $ atomically $ read sendPutBack)
