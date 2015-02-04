@@ -44,6 +44,7 @@ import System.Posix.Files
 import Data.BEncode
 import "temporary-resourcet" System.IO.Temp
 import qualified Data.Set as Set
+import Data.Map as Map
 
 import Data.Random.RVar
 import Data.Random.Extras
@@ -78,6 +79,8 @@ data BTClientConfig = BTClientConfig {
   , btProc :: TorrentProc
     -- host, port, (uname, password)
   , connectToClient :: String -> Word16 -> IO TorrentClientConn
+
+  , outgoingRedirects :: Map RemoteAddr RemoteAddr
 } 
 
 {- a contact file is a file used to create a p2p file exchange
@@ -248,6 +251,7 @@ startProxies btConf onConn = do
                  proxyPort = revProxyPort btConf
                , initHook = P.flip (onConn Reverse)
                , handshake = revProxy (read localhost :: IP) (pubBitTorrentPort btConf)
+               , redirects = Map.empty
              }
 
   -- forward socks 
@@ -255,6 +259,7 @@ startProxies btConf onConn = do
                  proxyPort = socksProxyPort btConf
                , initHook = onConn Forward
                , handshake = Socks4.serverProtocol
+               , redirects = outgoingRedirects btConf
             }
   return (reverseProxy, forwardProxy)
 

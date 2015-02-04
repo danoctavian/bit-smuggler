@@ -108,12 +108,13 @@ captureHook file = do
                (\bs -> (liftIO $ atomically $ writeTQueue tQueue bs) >> DC.yield bs)
  
 
-trafficCapture prefix port = do
+trafficCapture prefix port protocol redirects = do
 --  updateGlobalLogger logger  (setLevel DEBUG)
   Proxy.run $ Proxy.Config { Proxy.proxyPort = port
             , Proxy.initHook =  initCaptureHook (prefix ++ "incomingCapture")
                                                 (prefix ++ "outgoingCapture")
-            , Proxy.handshake = Socks4.serverProtocol
+            , Proxy.handshake = protocol
+            , Proxy.redirects = redirects
        }
 
 printChunk = awaitForever $
@@ -124,6 +125,7 @@ trafficProxy = do
             , Proxy.initHook
                = (\_ _ -> return $ Proxy.DataHooks printChunk printChunk (return ())) 
             , Proxy.handshake = Socks4.serverProtocol
+            , Proxy.redirects = Map.empty
        }
 
 uTorrentStateFiles :: [String]
@@ -166,6 +168,12 @@ peerSeedTalk seedPath peerPath dataFilePath otherDataFilePath tFilePath = runRes
     shelly $ cp otherDataFilePath peerPath --place file to be seeded
 
 
+  let seederPort = 9111
+  let peerPort = 10000
+  let revProxyPort = 1081
+  let socksProxyPort = 1080
+
+
   trackEvents <- liftIO $ newTChanIO 
   tracker <- allocAsync $ async $ Tracker.runTracker
                         $ Tracker.Config { Tracker.listenPort = 6666
@@ -175,7 +183,9 @@ peerSeedTalk seedPath peerPath dataFilePath otherDataFilePath tFilePath = runRes
   liftIO $ debugM logger "tracker is booting"
 
 --  liftIO $ threadDelay $ 2 * milli
-  proxy <- allocAsync $ async $ trafficCapture "seeder-" 1081
+  proxy <- allocAsync $ async
+    $ trafficCapture "seeder-"
+            revProxyPort (revProxy (P.read localhost) seederPort) Map.empty
   liftIO $ threadDelay $ 1 * milli
 
 
@@ -184,7 +194,7 @@ peerSeedTalk seedPath peerPath dataFilePath otherDataFilePath tFilePath = runRes
   liftIO $ threadDelay $ 2 * milli
   liftIO $ debugM logger "launched seeder"
   seedConn <- liftIO $ makeUTorrentConn localhost webUIPortSeed  utorrentDefCreds
-  liftIO $ setSettings seedConn [UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, TransportDisposition True False True False,  LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1081, ProxyP2P True]
+  liftIO $ setSettings seedConn [BindPort seederPort, UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, TransportDisposition True False True False,  LocalPeerDiscovery False] --, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1081, ProxyP2P True]
 
 
 --  liftIO $ setSettings peerConn [BindPort 
@@ -194,7 +204,9 @@ peerSeedTalk seedPath peerPath dataFilePath otherDataFilePath tFilePath = runRes
   liftIO $ debugM logger "got announce"
   -- sleep for a while until that is announced; ideally i should put
 
-  proxy <- allocAsync $ async $ trafficCapture "peer-" 1080
+  proxy <- allocAsync $ async $ trafficCapture "peer-" socksProxyPort Socks4.serverProtocol
+                     (Map.fromList [((Right (P.read localhost), seederPort)
+                                   ,(Right (P.read localhost), revProxyPort) )]) 
   liftIO $ threadDelay $ 1 * milli
  
   peer <- allocAsync $ runUTClient peerPath
@@ -203,7 +215,7 @@ peerSeedTalk seedPath peerPath dataFilePath otherDataFilePath tFilePath = runRes
 
   peerConn <- liftIO $ makeUTorrentConn localhost webUIPortPeer utorrentDefCreds
 
-  liftIO $ setSettings peerConn [UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, TransportDisposition True False True False, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1080, ProxyP2P True]
+  liftIO $ setSettings peerConn [BindPort peerPort, UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, TransportDisposition True False True False, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort socksProxyPort, ProxyP2P True]
 
   liftIO $ addTorrentFile peerConn $ pathToString tFilePath
  
@@ -237,6 +249,7 @@ runSimpleProxy = do
                                                 , Proxy.onDisconnect = return ()
                                                }
           , Proxy.handshake = Socks4.serverProtocol
+          , Proxy.redirects = Map.empty
      }
 
 runSimpleRevProxy ip port = do
@@ -248,6 +261,8 @@ runSimpleRevProxy ip port = do
                                                 , Proxy.onDisconnect = return ()
                                                }
           , Proxy.handshake = revProxy ip port
+          , Proxy.redirects = Map.empty
+
      }
 
 runTestRev = runSimpleRevProxy (IPv4 $ toIPv4 [127, 0, 0, 1]) 7882
@@ -265,6 +280,7 @@ tryMaybeBitTorrentProxy port = do
               , Proxy.initHook
                   = (\ _ _ -> return $ Proxy.DataHooks idleHook idleHook (return ()))
               , Proxy.handshake = Socks4.serverProtocol
+              , Proxy.redirects = Map.empty
            }
 
 idleHook = btStreamHandler (DC.map P.id)
