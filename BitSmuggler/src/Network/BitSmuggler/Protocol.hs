@@ -291,18 +291,9 @@ makePieceHooks = do
 makeStreams (PieceHooks {..}) getFileFixer = do
   -- a tmvar used to notify the recv thread of the infohash of the stream
   -- in the case in which the send thread learns about it
-  return $ ((btStreamHandler $ recvStream getFileFixer 
-                                   (atomically . write recvPiece)
-              =$ (DC.mapM (\bs -> do
---                              debugM logger $ "sending to btclient " ++ show bs
-                              return bs
-                          ))
-           , (DC.mapM (\bs -> do
---               debugM logger $ "coming from bt client " ++ show bs
-               return bs
-              )) =$ (btStreamHandler $ sendStream (liftIO . atomically . (write sendGetPiece))
-                                   (liftIO $ atomically $ read sendPutBack)
-                                   )))
+  return $ (btStreamHandler $ recvStream getFileFixer (atomically . write recvPiece)
+           , btStreamHandler $ sendStream (liftIO . atomically . (write sendGetPiece))
+                                   (liftIO $ atomically $ read sendPutBack))
 
 -- the stream handler stops parsing when it can no longer 
 -- make sense of the stream and instead forwards Unparsed ByteStrings

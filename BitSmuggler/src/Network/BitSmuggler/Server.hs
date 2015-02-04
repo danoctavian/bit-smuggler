@@ -163,7 +163,10 @@ handleConnection stateVar pieceHs secretKey userHandle disconnectGate = do
       debugM logger "turns out it's not a bit-smuggler connection"
 
       drainIncoming <- async $ forever $ atomically $ read $ recvPiece pieceHs
+
+      -- wait for the disconnect..
       atomically $ goThroughGate disconnectGate
+
       -- kill the threads meant to simply move the outgoing/incoming pieces
       cancel drainIncoming
       atomically $ putTMVar kill ()
