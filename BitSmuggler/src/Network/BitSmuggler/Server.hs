@@ -68,6 +68,7 @@ data Connection = Conn {
   , pieceProxy :: Async ()
 }
 
+-- https://www.youtube.com/watch?v=S0nlygb1Qfw
 
 listen :: ServerConfig -> (ConnData -> IO ()) -> IO ()
 listen config handle = runResourceT $ do
@@ -108,7 +109,6 @@ cleanState stateVar = do
 
 killConn = cancel . handlerTask
 
--- TODO: check this out https://www.youtube.com/watch?v=uMK0prafzw0
 serverConnInit secretKey stateVar handleConn fileFix direction local remote = do
   pieceHs <- makePieceHooks
 
