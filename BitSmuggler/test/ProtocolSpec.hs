@@ -42,7 +42,7 @@ sendFuseRecvIsId arbBs
       recv = recvPipe (DC.map P.id) fakeDecrypt
       send = sendPipe testPacketSize (DC.map P.id) fakeEncrypter
       wireMsgs :: [WireMessage ServerMessage]
-      wireMsgs = P.map Data messages
+      wireMsgs = P.map (Data . DataChunk) messages
 
 -- fake crypto 
 -- we're not testing that here so we're just mocking it

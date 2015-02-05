@@ -21,20 +21,17 @@ import Network.BitSmuggler.DemoSetup
 
 -- currently tiny commandline app to run some manual tests
 main = do
-  P.putStrLn "0 server, 1 client, 2 make cache, 3 socket ping, 4 generate file"
+  P.putStrLn "0 server, 1 client, 2 make cache, 3 generate file"
   args <- getArgs  
   case read (P.head args) :: Int of
-    0 -> runRealDemoServer
-    1 -> runRealDemoClient
-    2 -> initCache $ P.tail args
-    3 -> bittorrentPing $ P.tail args
+    0 -> return () -- runRealDemoServer
+    1 -> return () --runRealDemoClient
+    2 -> return () -- initCache $ P.tail args
       -- seed, size, filename
-    4 -> genRandFile $ P.tail args
+    3 -> genRandFile $ P.tail args
   return ()
 
-initCache a = setupFileCache (a !! 0) (a !! 1) (a !! 2)
-
-bittorrentPing a = socketPing (BSC.pack $ a !! 0) ( read (a !! 1) :: Int)
+--initCache a = setupFileCache (a !! 0) (a !! 1) (a !! 2)
 
 -- sends a bittorrent handshake message to see how a bittorrent clien
 -- responds to it

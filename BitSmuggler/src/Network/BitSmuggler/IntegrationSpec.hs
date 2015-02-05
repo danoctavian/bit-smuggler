@@ -198,14 +198,11 @@ clientChunks ((chunk, i) : cs) = do
       clientChunks cs 
     Nothing -> (liftIO $ debugM logger "terminated from upstream") >> return ()
 
-
-
 clientChunkExchange c = do
   infoM logger "client ping pongs some chunks with the server.."
   (connSource c) =$ clientChunks (P.zip chunks [1..]) $$ (connSink c)
 
   return ()
-
 
 makeContactFile (filePath, infoHash, seed) = do
   Right t <- fmap readTorrent $ BSL.readFile $ filePath
