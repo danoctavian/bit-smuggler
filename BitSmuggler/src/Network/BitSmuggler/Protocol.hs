@@ -37,6 +37,8 @@ import qualified Network.BitSmuggler.BitTorrentParser as BT
 
 import Network.BitSmuggler.ARQ as ARQ
 import Network.BitSmuggler.Common
+import Network.BitSmuggler.TorrentFile
+
 
 {-
 
@@ -305,8 +307,6 @@ btStreamHandler transform = (mkConduitGet handleStreamFail (get :: Get BT.Stream
 
 handleStreamFail _ = DC.map BT.Unparsed
 
-type LoadBlock = (Int, BT.Block) -> IO ByteString 
-
 sendStream putPiece getPiece 
   = chunkStream (\ih -> loop)
     where
@@ -317,7 +317,7 @@ sendStream putPiece getPiece
                assert (BS.length updatedP == BS.length (BT.block p)) (return ())
                return $ (\b -> p {BT.block = b}) updatedP
 
-recvStream :: (InfoHash -> IO (Maybe LoadBlock))
+recvStream :: (InfoHash -> IO (Maybe BlockLoader))
               -> (ByteString -> IO ()) 
               -> ConduitM BT.StreamChunk BT.StreamChunk IO ()
 recvStream getBlockLoader putRecv
@@ -330,15 +330,16 @@ recvStream getBlockLoader putRecv
           Nothing -> do
             liftIO $ debugM logger " ***there's no piece fixer. just proxy things"
             awaitForever (\m -> DC.yield m) -- just proxy stuff
-          Just loadBlock -> do
+          Just blockLoader -> do
             liftIO $ debugM logger "*** receiving bitsmuggler tampered-pieces"
             awaitForPiece $ \piece -> do
                               putRecv $ BT.block piece
 
                               -- TODO: don't fix it if it ain't broken
                                -- pieces that are not tampered with should not be fixed
-                              fixed <- fixPiece piece loadBlock
+                              fixed <- fixPiece piece (loadBlock blockLoader)
                               return fixed
+            liftIO $ closeLoader blockLoader
 
 fixPiece p@(BT.Piece {..}) loadBlock = do
   goodBlock <- loadBlock (index, BT.Block {BT.blockOffset = begin,

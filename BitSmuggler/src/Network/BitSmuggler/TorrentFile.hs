@@ -8,6 +8,8 @@ module Network.BitSmuggler.TorrentFile (
   , makePartial
   , infoHashToString
   , textToInfoHash
+  , LoadBlock
+  , BlockLoader (..)
 ) where
 
 import Crypto.Hash.SHA1 as SHA1
@@ -35,7 +37,7 @@ import System.IO.MMap
 import Data.ByteString.Base16 as Base16
 import System.IO
 
-import Network.BitSmuggler.BitTorrentParser
+import Network.BitSmuggler.BitTorrentParser as BT
 import Network.BitSmuggler.Utils
 
 import Network.BitTorrent.Types
@@ -102,26 +104,22 @@ blockPos pieceLen (index, block)
   = (pieceLen * (fromIntegral index)
       + (fromIntegral $ blockOffset block), fromIntegral $ blockSize block)
 
+type LoadBlock = (Int, BT.Block) -> IO ByteString
+data BlockLoader = BlockLoader {loadBlock :: LoadBlock, closeLoader :: IO ()}
 
 makeBlockLoader (SingleFile {..}) filePath = do
   -- TODO: figure out why memory mapping doesn't work
   -- file <- mmapFileByteStringLazy filePath Nothing
   -- it seems to just load the wrong things
   -- lazy loading the whole file isn't an option- it blows up the memory
+  -- so now it's done with seek and get
   handle <- openFile filePath ReadMode
-  return $ \pos -> do 
-    let (start, len) =  blockPos (fromIntegral tPieceLength) pos
-    hSeek handle AbsoluteSeek start
-    hGet handle len 
 
-{-
-makeBlockLoader (SingleFile {..}) filePath = do
-  -- TODO: figure out why memory mapping doesn't work
-  -- file <- mmapFileByteStringLazy filePath Nothing
-  -- it seems to just load the wrong things
-  -- lazy loading the whole file isn't an option- it blows up the memory
-  file <- BSL.readFile filePath
-  return $ \pos -> -- this function is "pure" but it does lazy i/o
-    let (start, len) =  blockPos (fromIntegral tPieceLength) pos
-    in BSL.toStrict $ BSL.take len $ BSL.drop start file
--}
+  return $ BlockLoader {
+      loadBlock = \pos -> do 
+        let (start, len) =  blockPos (fromIntegral tPieceLength) pos
+        hSeek handle AbsoluteSeek start
+        hGet handle len 
+    , closeLoader = hClose handle 
+  }
+

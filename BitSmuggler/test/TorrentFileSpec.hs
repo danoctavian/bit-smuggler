@@ -14,6 +14,7 @@ import Control.Monad.Trans.Resource
 import qualified Data.Conduit.List as DCL 
 import System.IO
 import Control.Monad
+import Control.Exception.Base
 import Control.Monad.IO.Class
 import Data.Serialize as DS
 import Data.ByteString.Lazy as BSL
@@ -101,16 +102,20 @@ spec = do
   describe "makeBlockLoader" $ do
     it "loads the same blocks as the ones streamed in a bittorrent session" $ do
       (Right torrentFile) <- fmap readTorrent $ BSL.readFile dataFileSmallTFile
-      blockLoad <- makeBlockLoader (tInfo torrentFile) dataFileSmall
-      chunks <- runResourceT $ sourceFile torrentStream 
-              =$ conduitGet (get :: Get StreamChunk) $$ DCL.consume
-      let justPieces = P.filter isPiece $ chunks 
-      (P.length justPieces >= 1) `shouldBe` True
-      sames <- forM justPieces $ \(MsgChunk _ p) -> do
-        loadedBlock <- blockLoad (fromIntegral $ BT.index p, Block {blockOffset = begin p,
-                        blockSize  = BS.length $ block p}) 
-        return $ loadedBlock == (block p)
-      P.length (P.filter (P.id) sames) `shouldBe` P.length justPieces
+      bracket
+        (makeBlockLoader (tInfo torrentFile) dataFileSmall)
+        closeLoader
+        $ \blockLoader -> do 
+          chunks <- runResourceT $ sourceFile torrentStream 
+                  =$ conduitGet (get :: Get StreamChunk) $$ DCL.consume
+          let justPieces = P.filter isPiece $ chunks 
+          (P.length justPieces >= 1) `shouldBe` True
+          sames <- forM justPieces $ \(MsgChunk _ p) -> do
+            loadedBlock <- (loadBlock blockLoader) (fromIntegral $ BT.index p
+                           , Block {blockOffset = begin p,
+                             blockSize  = BS.length $ block p}) 
+            return $ loadedBlock == (block p)
+          P.length (P.filter (P.id) sames) `shouldBe` P.length justPieces
       return ()
         
   return ()
