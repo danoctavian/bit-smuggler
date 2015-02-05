@@ -107,8 +107,9 @@ spec = do
       let justPieces = P.filter isPiece $ chunks 
       (P.length justPieces >= 1) `shouldBe` True
       sames <- forM justPieces $ \(MsgChunk _ p) -> do
-        return $ blockLoad (fromIntegral $ BT.index p, Block {blockOffset = begin p,
-                        blockSize  = BS.length $ block p}) == (block p)
+        loadedBlock <- blockLoad (fromIntegral $ BT.index p, Block {blockOffset = begin p,
+                        blockSize  = BS.length $ block p}) 
+        return $ loadedBlock == (block p)
       P.length (P.filter (P.id) sames) `shouldBe` P.length justPieces
       return ()
         

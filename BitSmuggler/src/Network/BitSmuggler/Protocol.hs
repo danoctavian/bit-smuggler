@@ -305,7 +305,7 @@ btStreamHandler transform = (mkConduitGet handleStreamFail (get :: Get BT.Stream
 
 handleStreamFail _ = DC.map BT.Unparsed
 
-type LoadBlock = (Int, BT.Block) -> ByteString 
+type LoadBlock = (Int, BT.Block) -> IO ByteString 
 
 sendStream putPiece getPiece 
   = chunkStream (\ih -> loop)
@@ -337,12 +337,13 @@ recvStream getBlockLoader putRecv
 
                               -- TODO: don't fix it if it ain't broken
                                -- pieces that are not tampered with should not be fixed
-                              return $ fixPiece piece loadBlock
+                              fixed <- fixPiece piece loadBlock
+                              return fixed
 
-fixPiece p@(BT.Piece {..}) loadBlock =
-  let goodBlock = loadBlock (index, BT.Block {BT.blockOffset = begin,
+fixPiece p@(BT.Piece {..}) loadBlock = do
+  goodBlock <- loadBlock (index, BT.Block {BT.blockOffset = begin,
                                         BT.blockSize  = BS.length block})
-  in p {BT.block = goodBlock}
+  return $ p {BT.block = goodBlock}
 
 
 chunkStream postHandshake = do

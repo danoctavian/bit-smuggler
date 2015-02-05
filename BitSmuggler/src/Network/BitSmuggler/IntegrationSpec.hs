@@ -4,6 +4,7 @@ module Network.BitSmuggler.IntegrationSpec where
 import Prelude as P
 import Data.Torrent
 import Data.Maybe
+import Data.Text as T
 import Data.ByteString as BS
 import Data.ByteString.Lazy as BSL
 import System.FilePath.Posix
@@ -59,18 +60,28 @@ both running on the same machine
 
 TODO: move to the test directory after stabilizing the code
 currently wrote in a normal module
-
 -}
 
 
+testRoot = "test-data/integration-test/"
+
+
+data TestFile = TestFile {metadata :: (FilePath, Text, Int), fileDataPath :: String}
 --2 gb file?
 
+bigFile = TestFile bigTestFile bigTestDataFile
+bigTestFile = (testRoot </> "contactFile/testFileBig.torrent"
+                , "ef967fc9d342a4ba5c4604c7b9f7b28e9e740b2f"
+                , 69)
+
+bigTestDataFile = testRoot </> "contactFile/testFileBig.txt"
+
+
 -- 100 mb file
-testRoot = "test-data/integration-test/"
+smallFile = TestFile smallTestFile smallTestDataFile
 smallTestFile = (testRoot </> "contactFile/testFile.torrent"
                 , "f921dd6548298527d40757fb264de07f7a47767f"
                 , 23456)
-
 smallTestDataFile = testRoot </> "contactFile/testFile.txt"
 
 makePaths prefix = P.map ((testRoot </> prefix) </> ) ["cache", "utorrent-client"]
@@ -79,6 +90,7 @@ localhostIP = IPv4 $ toIPv4 [127,0,0,1]
 
 runIntegrationTest :: IO ()
 runIntegrationTest = runResourceT $ do
+  let testFile = bigFile
 
   liftIO $ updateGlobalLogger logger  (setLevel DEBUG)
   liftIO $ updateGlobalLogger Tracker.logger  (setLevel DEBUG)
@@ -88,7 +100,7 @@ runIntegrationTest = runResourceT $ do
   let [serverCache, serverUTClientPath] = makePaths "server"
   let [clientCache, clientUTClientPath] = makePaths "client"
 
-  contact <- liftIO $ makeContactFile smallTestFile 
+  contact <- liftIO $ makeContactFile (metadata testFile)
   (serverDesc, serverSk)
     <- liftIO $ makeServerDescriptor contact localhostIP
 
@@ -199,6 +211,24 @@ makeServerDescriptor contact ip = do
 
   return $ (ServerDescriptor ip [contact] serverPkWord
             , serverSkWord)
+
+
+initIntegrationTestCaches testFile = do
+  let serverCache = P.head $ makePaths "server"
+  let clientCache = P.head $ makePaths "client"
+  initFileCache serverCache  testFile
+  initFileCache clientCache testFile
+
+
+initFileCache cachePath testFile = do
+  let (tpath, ih, seed)  = metadata testFile
+  fHandle <- openFile (fileDataPath testFile) ReadMode
+  cache <- Cache.load cachePath  
+  Cache.put cache (fromRight $ DS.decode $ fromJust $ textToInfoHash ih :: InfoHash)
+                  $  sourceHandle fHandle
+  hClose fHandle
+  Cache.close cache
+
 
 uTorrentConnect host port = UT.makeUTorrentConn host port ("admin", "")
 

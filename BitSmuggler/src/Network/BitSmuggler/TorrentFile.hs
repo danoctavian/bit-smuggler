@@ -33,6 +33,7 @@ import Data.Text as T
 import Data.Text.Encoding as T
 import System.IO.MMap
 import Data.ByteString.Base16 as Base16
+import System.IO
 
 import Network.BitSmuggler.BitTorrentParser
 import Network.BitSmuggler.Utils
@@ -101,12 +102,26 @@ blockPos pieceLen (index, block)
   = (pieceLen * (fromIntegral index)
       + (fromIntegral $ blockOffset block), fromIntegral $ blockSize block)
 
+
 makeBlockLoader (SingleFile {..}) filePath = do
   -- TODO: figure out why memory mapping doesn't work
-  -- mmapFileByteStringLazy filePath Nothing
+  -- file <- mmapFileByteStringLazy filePath Nothing
+  -- it seems to just load the wrong things
+  -- lazy loading the whole file isn't an option- it blows up the memory
+  handle <- openFile filePath ReadMode
+  return $ \pos -> do 
+    let (start, len) =  blockPos (fromIntegral tPieceLength) pos
+    hSeek handle AbsoluteSeek start
+    hGet handle len 
+
+{-
+makeBlockLoader (SingleFile {..}) filePath = do
+  -- TODO: figure out why memory mapping doesn't work
+  -- file <- mmapFileByteStringLazy filePath Nothing
   -- it seems to just load the wrong things
   -- lazy loading the whole file isn't an option- it blows up the memory
   file <- BSL.readFile filePath
   return $ \pos -> -- this function is "pure" but it does lazy i/o
     let (start, len) =  blockPos (fromIntegral tPieceLength) pos
     in BSL.toStrict $ BSL.take len $ BSL.drop start file
+-}
