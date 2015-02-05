@@ -256,7 +256,14 @@ runConnection packetSize arq encrypter decrypt token userHandle ps@(DataPipes {.
 
   liftIO $ debugM logger $ "running the user conn handler"
   -- run conn handler
-  liftIO $ userHandle $ pipeToConnData user
+  userResult <- liftIO $ try' (userHandle $ pipeToConnData user)
+  case userResult of
+    Left e -> liftIO $ errorM logger "user handle terminated with exception "
+    Right _ -> liftIO $ debugM logger "user handle terminated gracefully "
+
+  -- termination handling
+  liftIO $ flushMsgQueue (pipeSend user)
+
   return ()
 
 

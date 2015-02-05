@@ -1,5 +1,8 @@
 {-# LANGUAGE RecordWildCards, OverloadedStrings #-}
 {-# LANGUAGE PackageImports #-}
+{-# LANGUAGE RankNTypes #-}
+
+
 module Network.BitSmuggler.Common (
     ConnData (..)
   , BitSmugglerException (..)
@@ -67,8 +70,8 @@ bitsmuggler functionality common between client and server
 -}
 
 data ConnData = ConnData {
-    connSend :: ByteString -> IO ()
-  , connRecv :: IO ByteString
+    connSource :: Producer IO ByteString 
+  , connSink :: Consumer ByteString IO ()
 }
 
 data BTClientConfig = BTClientConfig {

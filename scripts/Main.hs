@@ -26,7 +26,7 @@ import Control.Concurrent.STM
 import Control.Monad
 import System.Log.Logger
 
-import Data.Conduit.Binary
+import Data.Conduit.Binary as DCB
 import Data.Conduit.List as CL
 import Data.Conduit as DC
 import Data.Conduit.List as DC
@@ -360,9 +360,27 @@ testRunClientWithSettings = do
                        "../demo/contactFile/testFile.txt"
 
 
- 
- 
+echoPort = 8887
 
+echoClient = do
+  let msg = "hello" :: BS.ByteString
+  runTCPClient (clientSettings echoPort "127.0.0.1") $ \appData -> do
+    (appSource appData) =$ (foreverPing msg) $$ (appSink appData)
+    
+foreverPing msg = do
+  DC.yield msg  
+  echoResp <- DCB.take (BS.length msg)  
+  return ()
+
+echoServer = do
+  runTCPServer (serverSettings echoPort "*") $ \appData -> do
+    (appSource appData) =$ (DC.mapM (\bs -> P.putStrLn "wtf" >> return bs))
+                        $$ (appSink appData)
+    P.putStrLn "finished conn"
+    DC.sourceList ["omg"] $$ (appSink appData)
+    P.putStrLn "sent smth after connection was closed"
+
+    
 
 ---- various toy functions
 

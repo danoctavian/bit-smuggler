@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances, ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleInstances, UndecidableInstances #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Network.BitSmuggler.Utils (
     localhost
@@ -142,7 +143,7 @@ if' c a b = if c then a else b
 sourceTQueue :: MonadIO m => TQueue a -> Source m a
 sourceTQueue chan = forever $ (liftIO $ atomically $ readTQueue chan) >>= DC.yield
 
-sinkTQueue :: MonadIO m => TQueue a -> Sink a m ()
+sinkTQueue :: MonadIO m => TQueue a -> Consumer a m ()
 sinkTQueue queue = awaitForever (\item -> liftIO $ atomically $ writeTQueue queue item)
 
 conduitBytes :: Monad m =>  Conduit ByteString m Word8 

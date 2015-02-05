@@ -45,7 +45,7 @@ import Network.BitSmuggler.FileCache as Cache
 import Network.BitSmuggler.TorrentClientProc as Proc
 import Network.BitSmuggler.Protocol
 
-
+{-
 chunks = [ BS.replicate 1000 99, BS.replicate (10 ^ 4)  200
          , BS.concat [BS.replicate (10 ^ 4) 39, BS.replicate (10 ^ 4) 40]
          , BS.replicate (10 ^ 4)  173
@@ -272,5 +272,4 @@ runPing = do
   updateGlobalLogger logger  (setLevel DEBUG)
   socketPing "127.0.0.1" 5881
    
-    
-
+-}

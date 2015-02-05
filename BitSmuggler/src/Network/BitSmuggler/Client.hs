@@ -99,6 +99,8 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
      atomically $ goThroughGate userGate
      debugM logger "starting user handler execution"
      handle $ pipeToConnData userPipe
+     -- after user function executed 
+     flushMsgQueue (pipeSend userPipe)
      atomically $ openGate exitGate -- signal termination
 
   clientState <- liftIO $ newTVarIO $ ClientState Nothing 

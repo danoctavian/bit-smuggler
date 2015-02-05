@@ -179,8 +179,8 @@ data DataPipes r s = DataPipes {
 -- putting it all together
 launchPipes packetSize  initARQ encrypter decrypt
             (DataPipes control (PieceHooks {..}) allowData) = do
-  userSend <- liftIO $ (newTQueueIO :: IO (TQueue ByteString))
-  userRecv <- liftIO $ (newTQueueIO :: IO (TQueue ByteString))
+  userSend <- liftIO $ (newTQueueIO :: IO (TQueue DataUnit))
+  userRecv <- liftIO $ (newTQueueIO :: IO (TQueue DataUnit))
 
   -- create clock - keeps track of how many pieces flow upstream /downstream
   clock <- liftIO $ newClock 
@@ -208,9 +208,24 @@ launchPipes packetSize  initARQ encrypter decrypt
   return $ Pipe userRecv userSend
 
 pipeToConnData pipe = ConnData {
-      connSend = atomically . writeTQueue (pipeSend pipe)
-    , connRecv = atomically $ readTQueue (pipeRecv pipe)
+      connSource = connSrc pipe
+    , connSink = DC.map DataChunk =$ sinkTQueue (pipeSend pipe)
   }
+
+-- sends a EndOfStream message and blocks till 
+-- all messages are picked up from the queue
+flushMsgQueue q = do
+  atomically $ writeTQueue q $ EndOfStream -- no more data to send
+  atomically $ do
+    empty <- isEmptyTQueue q 
+    if empty then return () else retry
+
+
+connSrc pipe = do
+  item <- liftIO $ atomically $ readTQueue (pipeRecv pipe)
+  case item of 
+    DataChunk bs -> DC.yield bs >> connSrc pipe
+    EndOfStream -> return () -- terminate 
 
 -- messages 
 
@@ -220,7 +235,10 @@ type SessionToken = ByteString
 tokenLen = 64 -- bytes
 
 -- the messages sent on the wire in their most general form
-data WireMessage a = Data ByteString | Control a 
+data WireMessage a = Data DataUnit | Control a 
+  deriving (Eq, Show)
+
+data DataUnit = DataChunk ByteString | EndOfStream
   deriving (Eq, Show)
 
 data ServerMessage = AcceptConn SessionToken | RejectConn
@@ -245,10 +263,17 @@ instance Serialize ClientMessage where
 
 
 instance (Serialize a) => Serialize (WireMessage a) where
-  put (Data bs) = putWord8 0 >> putByteString bs
+  put (Data unit) = putWord8 0 >> put unit
   put (Control m) = putWord8 1 >> put m
-  get =   (byte 0 *> (Data <$> getRemaining))
+  get =   (byte 0 *> (Data <$> get))
       <|> (byte 1 *> (Control <$> get)) 
+
+instance Serialize DataUnit where
+  put (DataChunk bs) = putWord8 0 >> putByteString bs
+  put EndOfStream = putWord8 1
+  get =   (byte 0 *> (DataChunk <$> getRemaining))
+      <|> (byte 1 *> (return EndOfStream)) 
+
 
 -- encodes a custom serializable msg
 encodeMsg :: Serialize a => a -> ByteString
