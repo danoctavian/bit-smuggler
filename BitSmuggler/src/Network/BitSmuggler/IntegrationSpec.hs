@@ -172,36 +172,38 @@ smallChunks = P.map (BS.replicate (10 ^ 2)) [1..5]
 
 -- TODO: reabilitate those to use the new connData
 serverChunkExchange c = do
-  infoM logger "USER: waiting for signs of life from client"
-  message <- (connSource c) $$ DC.take 1
-  infoM logger $ "received from client " ++ show message
-  DC.sourceList ["hello from server"] $$ connSink c
-
-{-
-  connSend c "hello from server"
-  forM (P.zip chunks [1..]) $ \(chunk, i) -> do
-    bigBlock <- connRecv c
-    assert (bigBlock == chunk) (return ())
-    debugM logger $ "server received big chunk succesfully " P.++ (show i)
-
-    connSend c chunk
--}
+  infoM logger "server ping pongs some chunks with the client.."
+  (connSource c) =$ serverChunks (P.zip chunks [1..]) $$ (connSink c)
   return ()
+
+serverChunks [] = return ()
+serverChunks ((chunk, i) : cs) = do
+  upstream <- await
+  case upstream of
+    (Just bigBlock) -> do
+      assert (bigBlock == chunk) (return ())
+      liftIO $ debugM logger $ "server received big chunk succesfully " P.++ (show i)
+      DC.yield chunk
+      serverChunks cs 
+    Nothing -> (liftIO $ debugM logger "terminated from upstream") >> return ()
+
+clientChunks [] = return ()
+clientChunks ((chunk, i) : cs) = do
+  DC.yield chunk -- send first, recieve after
+  upstream <- await
+  case upstream of
+    (Just bigBlock) -> do
+      assert (bigBlock == chunk) (return ())
+      liftIO $ debugM logger $ "server received big chunk succesfully " P.++ (show i)
+      clientChunks cs 
+    Nothing -> (liftIO $ debugM logger "terminated from upstream") >> return ()
+
 
 
 clientChunkExchange c = do
+  infoM logger "client ping pongs some chunks with the server.."
+  (connSource c) =$ clientChunks (P.zip chunks [1..]) $$ (connSink c)
 
-  infoM logger "USER: sending the server a hello"
-  DC.sourceList ["hello from client"] $$ connSink c
-  response <- (connSource c) $$ DC.take 1 
-  infoM logger $ "received from server " ++ show response
-{-
-  forM (P.zip chunks [1..]) $ \(chunk, i) -> do
-    connSend c chunk
-    bigBlock <- connRecv c
-    assert (bigBlock == chunk) (return ())
-    debugM logger $ "client received big chunk succesfully " P.++ (show i)
--}
   return ()
 
 
