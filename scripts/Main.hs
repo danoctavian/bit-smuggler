@@ -319,6 +319,19 @@ testProc = do
   cancel ncop
   P.getLine
 
+clientInterrupt = do
+  updateGlobalLogger logger (setLevel DEBUG)
+  conn <- makeUTorrentConn "127.0.0.1" 8000  ("admin", "")
+  debugM logger "made first connection"
+  P.getLine  -- wait for user input
+  let ih = fromJust $ textToInfoHash "ef967fc9d342a4ba5c4604c7b9f7b28e9e740b2f"
+  stopTorrent conn ih
+  P.getLine  -- wait for user input
+  startTorrent conn ih
+  return ()
+
+
+
 -- play to showcase the client functionality
 runTorrentClientScript = do
   updateGlobalLogger logger (setLevel DEBUG)
@@ -327,6 +340,8 @@ runTorrentClientScript = do
 
   addMagnetLink conn archMagnet
   pauseTorrent conn 593483888932971759637666321247479059714797631408 
+  unpauseTorrent conn 593483888932971759637666321247479059714797631408 
+
 {-
   r3 <- setSettings conn [UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, UTP True, LocalPeerDiscovery False, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1080, ProxyP2P True]
   debugM logger $ show $  r3
