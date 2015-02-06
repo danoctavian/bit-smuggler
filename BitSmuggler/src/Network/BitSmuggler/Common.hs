@@ -134,6 +134,7 @@ setupBTClient config = do
           , UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False
           , TransportDisposition True False True False
           , LocalPeerDiscovery False
+          , LimitLocalPeerBandwidth True
           , ProxySetType Socks4, ProxyIP localhost, ProxyPort (socksProxyPort config)
           , ProxyP2P True]
 
@@ -230,9 +231,19 @@ addTorrents btClientConn btProc files = do
         liftIO $ addTorrentFile btClientConn path
 
         -- wait for it to upload
-        retrying (constantDelay $ 10 ^ 5 * 5) (\_ isUploaded -> return $ not isUploaded) $ do
-          torrentList <- (liftIO $ listTorrents btClientConn)
-          return $ (P.elem infoHash) . P.map torrentID $ torrentList
+        retrying (constantDelay $ 10 ^ 5 * 5) (\_ isUploaded -> return $ not isUploaded)
+          $ do
+            torrentList <- (liftIO $ listTorrents btClientConn)
+            return $ (P.elem infoHash) . P.map torrentID $ torrentList
+
+        -- cap the transfer rate
+        -- TODO: play with this some more - right now even though you set
+        -- it to 300kb it gradually grows from 0 to 30-40 very slowly 
+        {-
+        let maxTransferRate = 300000 -- make this configurable or adaptable
+        liftIO $ setJobProperties btClientConn infoHash 
+                    [DownloadRate maxTransferRate, UploadRate maxTransferRate]
+        -}
 
         liftIO $ debugM logger $ "finished adding file" P.++ (show dataFile)
 

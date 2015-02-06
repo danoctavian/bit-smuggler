@@ -9,6 +9,7 @@ import Data.ByteString.Lazy as BSL
 import Data.ByteString.Char8 as BSC
 import Data.ByteString.Lazy.Char8 as BSLC
 import Data.String
+import Data.Maybe
 import Data.Text as Txt
 import Control.Exception
 import Data.IP
@@ -39,6 +40,8 @@ import Network.BitSmuggler.BitTorrentSimulator as Sim
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.Common
 import Network.BitSmuggler.Protocol
+import Network.BitSmuggler.TorrentFile
+
 
 import Data.Serialize as DS
 import Control.Concurrent
@@ -194,11 +197,14 @@ peerSeedTalk seedPath peerPath dataFilePath otherDataFilePath tFilePath = runRes
   liftIO $ threadDelay $ 2 * milli
   liftIO $ debugM logger "launched seeder"
   seedConn <- liftIO $ makeUTorrentConn localhost webUIPortSeed  utorrentDefCreds
-  liftIO $ setSettings seedConn [BindPort seederPort, UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, TransportDisposition True False True False,  LocalPeerDiscovery False] --, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1081, ProxyP2P True]
+  liftIO $ setSettings seedConn [BindPort seederPort, UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, TransportDisposition True False True False,  LocalPeerDiscovery False, LimitLocalPeerBandwidth True] --, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1081, ProxyP2P True]
 
 
 --  liftIO $ setSettings peerConn [BindPort 
   liftIO $ addTorrentFile seedConn $ pathToString tFilePath
+  liftIO $ setJobProperties seedConn
+       (fromJust $ textToInfoHash "f921dd6548298527d40757fb264de07f7a47767f")
+       [DownloadRate 20000, UploadRate 20000]
 
   liftIO $ waitFor (\(Tracker.AnnounceEv a) -> True) trackEvents
   liftIO $ debugM logger "got announce"

@@ -6,8 +6,7 @@ module Network.BitSmuggler.TorrentFile (
   , textToInfoHash
   , makeBlockLoader
   , makePartial
-  , infoHashToString
-  , textToInfoHash
+  , BT.infoHashToString
   , LoadBlock
   , BlockLoader (..)
 ) where
@@ -40,7 +39,7 @@ import System.IO
 import Network.BitSmuggler.BitTorrentParser as BT
 import Network.BitSmuggler.Utils
 
-import Network.BitTorrent.Types
+import qualified Network.BitTorrent.Types as BT
 
 {-
 
@@ -75,6 +74,9 @@ filterEvery pieceSize filter ix = do
   when (BS.length piece > 0) $ do
     DC.yield $ if filter ix piece then piece else BS.replicate (BS.length piece) 0
     filterEvery pieceSize filter (ix + 1)
+
+textToInfoHash :: Text -> Maybe InfoHash
+textToInfoHash t =  BT.textToInfoHash t >>= (eitherToMaybe . DS.decode)
 
 {-
 

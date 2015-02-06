@@ -207,7 +207,7 @@ clientChunkExchange c = do
 makeContactFile (filePath, infoHash, seed) = do
   Right t <- fmap readTorrent $ BSL.readFile $ filePath
   return $ FakeFile {seed = seed, torrentFile = t
-                    , infoHash = fromRight $ DS.decode $ fromJust $ textToInfoHash infoHash}
+                    , infoHash = fromJust $ textToInfoHash infoHash}
 
 makeServerDescriptor contact ip = do
   let cprg = cprgCreate $ createTestEntropyPool "leSeed" :: AESRNG
@@ -231,7 +231,7 @@ initFileCache cachePath testFile = do
   let (tpath, ih, seed)  = metadata testFile
   fHandle <- openFile (fileDataPath testFile) ReadMode
   cache <- Cache.load cachePath  
-  Cache.put cache (fromRight $ DS.decode $ fromJust $ textToInfoHash ih :: InfoHash)
+  Cache.put cache (fromJust $ textToInfoHash ih)
                   $  sourceHandle fHandle
   hClose fHandle
   Cache.close cache
