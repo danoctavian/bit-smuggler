@@ -26,6 +26,8 @@ import Data.Maybe
 import Data.BEncode
 
 import Network.BitSmuggler.TorrentFile as TF
+import Network.BitTorrent.Types as BT
+
 import Network.BitSmuggler.BitTorrentParser as BT
 import qualified Network.BitSmuggler.Protocol as Proto
 import Network.BitSmuggler.Utils
@@ -96,7 +98,7 @@ spec = do
 
        ] $ \(filePath, expectedHash) -> do
           (Right torrentFile) <- fmap readTorrent $ BSL.readFile dataFileSmallTFile
-          computeInfoHash torrentFile `shouldBe` (fromJust $ textToInfoHash expectedHash)
+          computeInfoHash torrentFile `shouldBe` (fromJust $ BT.textToInfoHash expectedHash)
       return ()
 
   describe "makeBlockLoader" $ do

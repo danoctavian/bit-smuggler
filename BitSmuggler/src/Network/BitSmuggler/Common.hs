@@ -135,6 +135,7 @@ setupBTClient config = do
           , TransportDisposition True False True False
           , LocalPeerDiscovery False
           , LimitLocalPeerBandwidth True
+          , UploadSlotsPerTorrent 1
           , ProxySetType Socks4, ProxyIP localhost, ProxyPort (socksProxyPort config)
           , ProxyP2P True]
 

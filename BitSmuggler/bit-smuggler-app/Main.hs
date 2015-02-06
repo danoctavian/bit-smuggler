@@ -18,6 +18,8 @@ import Network.BitSmuggler.TorrentFile
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.Common
 import Network.BitSmuggler.DemoSetup
+import Network.BitSmuggler.IntegrationSpec
+
 
 -- currently tiny commandline app to run some manual tests
 main = do
@@ -29,6 +31,7 @@ main = do
     2 -> return () -- initCache $ P.tail args
       -- seed, size, filename
     3 -> genRandFile $ P.tail args
+    4 -> runIntegrationTest
   return ()
 
 --initCache a = setupFileCache (a !! 0) (a !! 1) (a !! 2)

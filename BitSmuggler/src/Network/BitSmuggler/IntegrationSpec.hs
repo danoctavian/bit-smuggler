@@ -90,7 +90,7 @@ localhostIP = IPv4 $ toIPv4 [127,0,0,1]
 
 runIntegrationTest :: IO ()
 runIntegrationTest = runResourceT $ do
-  let testFile = smallFile 
+  let testFile = bigFile 
 
   liftIO $ updateGlobalLogger logger  (setLevel DEBUG)
   liftIO $ updateGlobalLogger Tracker.logger  (setLevel DEBUG)
@@ -168,7 +168,7 @@ chunks = [ BS.replicate 1000 99, BS.replicate (10 ^ 4)  200
          , BS.replicate (10 ^ 3)  201
          , BS.replicate (10 ^ 3)  202] P.++ smallChunks
 
-smallChunks = P.map (BS.replicate (10 ^ 2)) [1..5]
+smallChunks = P.take 1000 $ P.map (BS.replicate (10 ^ 2)) $ P.cycle [1..255]
 
 -- TODO: reabilitate those to use the new connData
 serverChunkExchange c = do

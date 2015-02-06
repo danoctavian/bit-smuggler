@@ -197,7 +197,7 @@ peerSeedTalk seedPath peerPath dataFilePath otherDataFilePath tFilePath = runRes
   liftIO $ threadDelay $ 2 * milli
   liftIO $ debugM logger "launched seeder"
   seedConn <- liftIO $ makeUTorrentConn localhost webUIPortSeed  utorrentDefCreds
-  liftIO $ setSettings seedConn [BindPort seederPort, UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, TransportDisposition True False True False,  LocalPeerDiscovery False, LimitLocalPeerBandwidth True] --, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1081, ProxyP2P True]
+  liftIO $ setSettings seedConn [BindPort seederPort, UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False, TransportDisposition True False True False,  LocalPeerDiscovery False, LimitLocalPeerBandwidth True, UploadSlotsPerTorrent 1] --, ProxySetType Socks4, ProxyIP "127.0.0.1", ProxyPort 1081, ProxyP2P True]
 
 
 --  liftIO $ setSettings peerConn [BindPort 

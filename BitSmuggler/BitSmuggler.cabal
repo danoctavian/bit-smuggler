@@ -143,6 +143,8 @@ Test-Suite spec
                    , async >=2.0.1 && <2.1
                    , stm >=2.4.3 && <2.5
                    , bencode >=0.5 && <0.6
+                   , bittorrent-client-control >=0.1 && < 0.2
+
 
 
 
