@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.BitSmuggler.DemoSetup where
 
+{-
 import Prelude as P
 import Data.Torrent
 import Data.Maybe
@@ -45,7 +46,6 @@ import Network.BitSmuggler.FileCache as Cache
 import Network.BitSmuggler.TorrentClientProc as Proc
 import Network.BitSmuggler.Protocol
 
-{-
 chunks = [ BS.replicate 1000 99, BS.replicate (10 ^ 4)  200
          , BS.concat [BS.replicate (10 ^ 4) 39, BS.replicate (10 ^ 4) 40]
          , BS.replicate (10 ^ 4)  173

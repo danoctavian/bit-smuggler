@@ -18,12 +18,14 @@ module Network.BitSmuggler.Common (
   , startProxies
   , addTorrents
   , makeRandPartial
+  , giveClientPartialFile
+  , isUsedUp
 ) where
 
 import Prelude as P
 import Data.IP
 import Data.ByteString
-import Data.Torrent 
+import Data.Torrent as TF
 import Data.Word
 import Data.ByteString as BS
 import qualified Data.Serialize as DS
@@ -55,7 +57,7 @@ import Data.Random.Source.DevRandom
 
 import Network.BitSmuggler.Crypto (Key)
 import Network.BitSmuggler.Utils
-import Network.BitTorrent.ClientControl as CC hiding (Torrent) 
+import Network.BitTorrent.ClientControl as CC
 import Network.BitSmuggler.TorrentClientProc as TC
 import Network.BitSmuggler.FileCache as FC
 import Network.BitSmuggler.TorrentFile
@@ -94,7 +96,7 @@ data BTClientConfig = BTClientConfig {
 data ContactFile = FakeFile {
                      seed :: Int -- the seed from which the file is created
                      -- a single file torrent; missing piece data
-                   , torrentFile :: Torrent 
+                   , torrentFile :: TF.Torrent 
                    , infoHash :: InfoHash -- check whether this file is good
                  }
                  | RealFile {infoHash :: InfoHash}
@@ -124,12 +126,6 @@ setupBTClient config = do
                   debugM logger "attempting to connect to bittorrent client..."
                   connectToClient config localhost (cmdPort config)
 
-  {-
-      Some of these settings are quirks of uTorrent so here the abstraction
-      breaks. 
-      UTP True on the client aside and no mention of UTP on the server side
-      TODO: explain the rest of the settings
-  -}
   liftIO $ CC.setSettings conn [CC.BindPort (pubBitTorrentPort config)
           , UPnP False, NATPMP False, RandomizePort False, DHTForNewTorrents False
           , TransportDisposition True False True False
@@ -206,54 +202,78 @@ findPieceLoader contactFiles ih = runMaybeT $ do
 
 addTorrents btClientConn btProc files = do
   -- construct partials
-  forM files $ \(infoHash, (dataFile, torrentFile)) -> do
-      debugM logger $ "adding for torrenting the file " P.++ (show dataFile)
-
-      let sf@(SingleFile {..}) = tInfo torrentFile -- assuming it's a single file
-      let pieceCount = tLength `div` tPieceLength 
-      let fName = (BSLC.unpack tName)
-      let btPath = getFilePath btProc fName
-
-      -- create partial file in bittorrent client's file store
-      makeRandPartial (fromIntegral tPieceLength) (fromIntegral pieceCount)
-                       dataFile  btPath
-
-      debugM logger $ "created a partially completed file" P.++ (show btPath)
-
-      runResourceT $ do
-        (_, path, handle) <- openTempFile Nothing (fName ++ ".torrent")
-        liftIO $ BS.hPutStr  handle (BSL.toStrict $ bPack $ serializeTorrent torrentFile)
-        liftIO $ hClose handle
-
-
-        liftIO $ debugM logger $ "telling  the bt client to use " P.++ (show dataFile)
-        liftIO $ debugM logger $ "with torrent file " P.++ (show path)
-
-        liftIO $ addTorrentFile btClientConn path
-
-        -- wait for it to upload
-        retrying (constantDelay $ 10 ^ 5 * 5) (\_ isUploaded -> return $ not isUploaded)
-          $ do
-            torrentList <- (liftIO $ listTorrents btClientConn)
-            return $ (P.elem infoHash) . P.map torrentID $ torrentList
-
-        -- cap the transfer rate
-        -- TODO: play with this some more - right now even though you set
-        -- it to 300kb it gradually grows from 0 to 30-40 very slowly 
-        {-
-        let maxTransferRate = 300000 -- make this configurable or adaptable
-        liftIO $ setJobProperties btClientConn infoHash 
-                    [DownloadRate maxTransferRate, UploadRate maxTransferRate]
-        -}
-
-        liftIO $ debugM logger $ "finished adding file" P.++ (show dataFile)
-
+  -- this can be parallelized
+  forM files $ \file@(infoHash, (dataFile, torrentFile)) -> do
+    debugM logger $ "adding for torrenting the file " P.++ (show dataFile)
+    giveClientPartialFile btClientConn btProc file
+    liftIO $ debugM logger $ "finished adding file" P.++ (show dataFile)
   return ()
 
+giveClientPartialFile btClientConn btProc (infoHash, (dataFile, torrentFile)) = do
+  let sf@(SingleFile {..}) = tInfo torrentFile -- assuming it's a single file
+  let pieceCount = tLength `div` tPieceLength 
+  let fName = (BSLC.unpack tName)
+  let btPath = getFilePath btProc fName
+
+  -- create partial file in bittorrent client's file store
+  makeRandPartial (fromIntegral tPieceLength) (fromIntegral pieceCount)
+                   dataFile  btPath
+
+  debugM logger $ "created a partially completed file" P.++ (show btPath)
+
+  runResourceT $ do
+    (_, path, handle) <- openTempFile Nothing (fName ++ ".torrent")
+    liftIO $ BS.hPutStr  handle (BSL.toStrict $ bPack $ serializeTorrent torrentFile)
+    liftIO $ hClose handle
+
+
+    liftIO $ debugM logger $ "telling  the bt client to use " P.++ (show dataFile)
+    liftIO $ debugM logger $ "with torrent file " P.++ (show path)
+
+    liftIO $ addTorrentFile btClientConn path
+
+    -- wait for it to upload
+    retrying (constantDelay $ 10 ^ 5 * 5) (\_ isUploaded -> return $ not isUploaded)
+      $ do
+        torrentList <- (liftIO $ listTorrents btClientConn)
+        return $ (P.elem infoHash) . P.map torrentID $ torrentList
+
+    -- cap the transfer rate
+    -- TODO: play with this some more - right now even though you set
+    -- it to 300kb it gradually grows from 0 to 30-40 very slowly 
+    {-
+    let maxTransferRate = 300000 -- make this configurable or adaptable
+    liftIO $ setJobProperties btClientConn infoHash 
+                [DownloadRate maxTransferRate, UploadRate maxTransferRate]
+    -}
+  return ()
+
+-- pieceCount / pieceCountDiv are how many pieces of a file are 
+-- owned by the local client
+-- the value x = 1 / 2 maximises the function f(x) = 1 - x ^ 2 
+-- where f determines roughly how many pieces are exchanged both ways
+-- if both clients start out with pieceCount / pieceCountDiv random pieces
+pieceCountDiv = 2
+
+maxProgress :: Int
+maxProgress = 1000
+
+-- a rough estimate of what progress each peer makes if they 
+-- were to randomly own a certain fraction of the file and then exchange
+expectedMaxProgress
+  = maxProgress `div` pieceCountDiv
+    + (round $ (1 - ( 1 / (fromIntegral pieceCountDiv)) ^ 2) * (fromIntegral maxProgress))
+-- a torrent is used up if it downloaded enough pieces that it 
+-- is not able to build lengthy connections anymore for both
+-- downstream and upstream (the downstream is the problem here)
+isUsedUp (CC.Torrent {..})
+  = (progress >= expectedMaxProgress - expectedMaxProgress `div` 10)
+    && ((peersConnected == 0 && seedsConnected == 0) || (downSpeed < 10 ^ 4)) 
 
 -- make a file with only part of the pieces present, chosen at random
 makeRandPartial pieceSize pieceCount origin dest = do
-  chosenIxs <- runRVar (sample (pieceCount `div` 2) [0..(pieceCount - 1)]) DevURandom
+  chosenIxs <- runRVar (sample (pieceCount `div` pieceCountDiv)
+                       [0..(pieceCount - 1)]) DevURandom
   let pieceSet = Set.fromList chosenIxs
   makePartial pieceSize origin dest (\i _ -> Set.member i pieceSet)
  

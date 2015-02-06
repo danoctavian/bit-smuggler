@@ -168,7 +168,7 @@ chunks = [ BS.replicate 1000 99, BS.replicate (10 ^ 4)  200
          , BS.replicate (10 ^ 3)  201
          , BS.replicate (10 ^ 3)  202] P.++ smallChunks
 
-smallChunks = P.take 1000 $ P.map (BS.replicate (10 ^ 2)) $ P.cycle [1..255]
+smallChunks = P.take 200 $ P.map (BS.replicate (10 ^ 2)) $ P.cycle [1..255]
 
 -- TODO: reabilitate those to use the new connData
 serverChunkExchange c = do

@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Network.BitSmuggler.BitTorrentSimulator (
     runClient  
@@ -87,10 +88,11 @@ instance BERT InfoHash where
   readBERT (BinaryTerm ih) = return . Bin.decode $ ih  -- may throw exception
 
 instance BERT Torrent where
-  showBERT (Torrent id name)
-    = DictionaryTerm [(AtomTerm "infohash", showBERT id), (AtomTerm "name", AtomTerm name)]
+  showBERT (Torrent {..})
+    = DictionaryTerm [(AtomTerm "infohash", showBERT torrentID)
+      , (AtomTerm "name", AtomTerm torrentName)]
   readBERT (DictionaryTerm [(AtomTerm "infohash", ih), (AtomTerm "name", AtomTerm n)])
-    = readBERT ih >>= (\ih -> return $ Torrent ih n)
+    = readBERT ih >>= (\ih -> return $ Torrent {torrentID = ih, torrentName = n})
 
 -- WARNING: disgusting hack
 -- put in a value that's never going to show up
@@ -207,7 +209,6 @@ messageTorrent th msg ihTerm = do
       return . Success . showBERT $ ()
     Nothing -> return $ Undesignated "non-existant infohash"
 
-fooTorrent = Torrent (Bin.decode $ BSL.replicate 20 1) "wtf.txt"
 
 newTorrent th source = do
   debugM logger $ "adding a new torrent with source " P.++ (show source)

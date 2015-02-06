@@ -78,7 +78,6 @@ localhost = "127.0.0.1"
 milli :: Int
 milli = 10 ^ 6
 
-
 instance Byteable Word128 where
   toBytes = BSL.toStrict . Bin.encode
 

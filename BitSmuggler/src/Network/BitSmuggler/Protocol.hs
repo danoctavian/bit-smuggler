@@ -161,7 +161,6 @@ isolateAndPad n = do
 
 pad bs targetLen padding = BS.concat [bs, BS.replicate (targetLen - BS.length bs) padding]
 
-
 data Pipe r s = Pipe {
     pipeRecv :: TQueue r 
   , pipeSend :: TQueue s 

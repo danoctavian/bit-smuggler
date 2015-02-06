@@ -11,7 +11,7 @@ import Data.ByteString as BS
 import Control.Monad.IO.Class
 import Control.Applicative
 import Data.IP
-import Control.Monad
+import Control.Monad as CM
 import Control.Exception
 import Control.Concurrent
 import Control.Concurrent.Async
@@ -26,7 +26,10 @@ import Data.Serialize as DS
 import Data.LargeWord
 import Crypto.Random
 import Data.Tuple as Tup
+import Data.Maybe
 import System.Timeout
+
+import Network.BitTorrent.ClientControl
 
 import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature, logger)
 import Network.TCP.Proxy.Socks4 as Socks4
@@ -37,6 +40,7 @@ import Network.BitSmuggler.Protocol
 import Network.BitSmuggler.ARQ as ARQ
 
 import Data.Map.Strict as Map
+import Data.Set as Set
 
 {-
 
@@ -64,7 +68,6 @@ data Connection = Conn {
     onHoldSince :: Maybe UTCTime
   , handlerTask :: Async ()
   , dataPipes :: DataPipes ClientMessage ServerMessage
-
   , pieceProxy :: Async ()
 }
 
@@ -96,6 +99,10 @@ listen config handle = runResourceT $ do
   -- tell bittorrent client to use the files
   -- TODO: implement
   liftIO $ addTorrents btClientConn (fst btProc) files
+
+  -- make sure that when files are used up (they get completed)
+  -- they are shrinked back to their original size
+--  allocLinkedAsync $ async $ replenishFiles btClientConn (fst btProc) files
 
   -- wait for it...
   liftIO $ waitBoth (snd reverseProxy) (snd forwardProxy)
@@ -265,6 +272,34 @@ runConnection packetSize arq encrypter decrypt token userHandle ps@(DataPipes {.
   liftIO $ flushMsgQueue (pipeSend user)
 
   return ()
+
+
+-- FILE REPLENISHER
+replenishWorkerCount = 1
+replenishFiles btClientConn btProc files = runResourceT $ do
+  jobQueue <- liftIO $ newTQueueIO
+  setVar <- liftIO $ newTVarIO Set.empty
+  CM.replicateM replenishWorkerCount $ allocLinkedAsync $ async
+                                 $ replenishWorker btClientConn btProc files jobQueue setVar
+
+  forever $ do
+    liftIO $ threadDelay $ 5 * milli
+    ts <- liftIO $ listTorrents btClientConn
+    forM ts $ \t -> when (isUsedUp t) $ do
+      let ih = torrentID t
+      underWork <- fmap (Set.member ih) $ liftIO $ atomically $ readTVar setVar
+      when (not underWork) $ liftIO $ atomically $ modifyTVar setVar (Set.insert ih)
+                                                   >> writeTQueue jobQueue ih
+
+replenishWorker btClientConn btProc files jobQueue underWork = forever $ do
+  infoHash <- atomically $ readTQueue jobQueue
+  let diskFilePaths = fromJust $ P.lookup infoHash files
+  -- pull out the file 
+  removeTorrentWithData btClientConn infoHash
+
+  giveClientPartialFile btClientConn btProc (infoHash, diskFilePaths) 
+  -- once it's done it's no longer under work
+  atomically $ modifyTVar underWork (Set.delete infoHash)
 
 
 disconnectCleanup disconnectGate token stateVar = do
