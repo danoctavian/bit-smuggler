@@ -31,6 +31,10 @@ library
     Network.BitSmuggler.Common
     Network.BitSmuggler.DemoSetup
     Network.BitSmuggler.IntegrationSpec
+
+    Network.BitSmuggler.Proxy.Server
+    Network.BitSmuggler.Proxy.Client
+    Network.BitSmuggler.Proxy.Common
   other-modules:       
     Network.BitSmuggler.TorrentClientProc
 
@@ -40,6 +44,7 @@ library
                      , cipher-aes >=0.2.9 && <0.3
                      , bytestring >=0.10 && <0.11
                      , base16-bytestring >=0.1.1 && <0.2
+                     , base64-bytestring >=1.0.0.1 && <1.1
                      , crypto-cipher-types >=0.0.1 && <0.2
                      , largeword >=1.2 && <1.3
                      , binary >=0.7.1 && <0.8
@@ -88,6 +93,8 @@ library
                      , random-fu >=0.2.6 && <0.3
                      , random-source >=0.3 && <0.4
                      , dequeue >=0.1.5 && <0.2
+                     , aeson >=0.8 && <0.9
+
 --                     , derive >=2.5.18 && <2.6
   hs-source-dirs:      src
   default-language:    Haskell2010

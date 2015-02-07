@@ -1,0 +1,27 @@
+Proxy server and client for TCP connections
+===========================================
+
+Example use case
+----------------
+
+Use the client to proxy all your browser traffic through it
+to a remote server proxy that makes connections for you.
+
+
+Design
+------
+
+Not being used just with Tor means that you may not care about
+anonimity but you might care only about getting across a internet
+censor therefore you don't care about what apps you proxy.
+(unlike the case with Tor, where proxying certain apps mean
+ you ruin your anonimty. eg. bittorrent)
+
+Options:
+  1. make it a socks proxy just like tor
+  2. find a better way? (yeah i know, very clear)
+
+
+
+
+

@@ -30,10 +30,12 @@ module Network.BitSmuggler.Utils (
   , toLazy
   , logger
   , absolutePath
+  , maybeRead
 ) where
 
 import Data.Typeable
 import Data.Byteable
+import Data.Maybe
 import qualified Data.Binary as Bin
 import Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
@@ -170,6 +172,10 @@ allocLinkedAsync runAsync
       a <- runAsync
       link a
       return a) (liftIO . cancel)
+
+-- read
+maybeRead :: (Read a) => String -> Maybe a
+maybeRead = fmap fst . listToMaybe . reads
 
 -- BYTESTRING
 toLazy bs = BSL.fromChunks [bs]

@@ -102,6 +102,7 @@ listen config handle = runResourceT $ do
 
   -- make sure that when files are used up (they get completed)
   -- they are shrinked back to their original size
+  -- TODO: reenable this
 --  allocLinkedAsync $ async $ replenishFiles btClientConn (fst btProc) files
 
   -- wait for it...
