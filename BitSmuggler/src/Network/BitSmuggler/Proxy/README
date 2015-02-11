@@ -21,7 +21,58 @@ Options:
   1. make it a socks proxy just like tor
   2. find a better way? (yeah i know, very clear)
 
+regardless of what interface the client app has, the rest of the tunnelling
+is the same.
+
+Features
+--------
+
+tunnels multiple TCP connections through a single bit-smuggler 
+tunnel simultaneously. How?
 
 
++++++++++++++++++++++++++++++++++++++
+client  |  bit-smuggler tunnel | server
+->                                ->
+->              > -------->      
+-> 
++++++++++++++++++++++++++++++++++++++
+
+Send
+* client-send - first come, first served. threads compete to push to a queue 
+* server-send - first come first served. read from the queue and send packet on the
+right connection
+
+the tunnel queues are potentially high contention. my feel that is that before
+this becomes an issue, the tunnel bandwidth will be the bottleneck. don't worry
+about it now.
+
+Receive
+same as above in reverse. 
+
+Selecting the right connection
+each connection has an ID. you can use a map to locate the right connection.
+both the client and the server hold a thread for each connection so routing to the
+right connection means pushing to a queue handled by that thread 
+
+Initiatiation
+* client makes socks connection.
+* send control message to server to create new connection to target dest
+  (use the same queue. maybe implement priority for control messages)
+* server receives control message. attempts connect to remote address.
+* on success/failure respond with control message.
+
+Implementation notes 
+--------------------
+
+isolate the implementation of that many-to-one connection handler
+from what protocol you have with the connecting client app (socks4 for now)
+
+library client call - connectTo :: RemoteAddr -> IO ConnData 
+-- throws exception if fails to connect
+
+server call - listen :: OnConn -> IO ()
 
 
+That's about it.
+----------------

@@ -35,6 +35,7 @@ library
     Network.BitSmuggler.Proxy.Server
     Network.BitSmuggler.Proxy.Client
     Network.BitSmuggler.Proxy.Common
+    Network.BitSmuggler.StreamMultiplex
   other-modules:       
     Network.BitSmuggler.TorrentClientProc
 
