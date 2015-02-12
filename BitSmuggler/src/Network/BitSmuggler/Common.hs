@@ -71,11 +71,6 @@ bitsmuggler functionality common between client and server
 
 -}
 
-data ConnData = ConnData {
-    connSource :: Producer IO ByteString 
-  , connSink :: Consumer ByteString IO ()
-}
-
 data BTClientConfig = BTClientConfig {
     pubBitTorrentPort :: PortNum
   , socksProxyPort :: PortNum

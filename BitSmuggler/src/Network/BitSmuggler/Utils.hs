@@ -31,6 +31,9 @@ module Network.BitSmuggler.Utils (
   , logger
   , absolutePath
   , maybeRead
+  , ConnData (..)
+  , putLenPrefixed
+  , getLenPrefixed
 ) where
 
 import Data.Typeable
@@ -106,6 +109,17 @@ instance Serialize InfoHash where
 -- given a type that has a Binary instance
 -- and has a constant size serialized 
 -- write cereal put and get in terms of that
+
+-- cereal for len prefixed bytestrings with a word32 for length
+putLenPrefixed m = putWord32le (fromIntegral $ BS.length m) >> putByteString m
+
+getLenPrefixed :: Serialize a => Get a
+getLenPrefixed = do
+  len <- getWord32le
+  DS.isolate (fromIntegral len) get
+
+
+
 binGet sz = do
     bs <- getBytes sz
     case Bin.decodeOrFail $ BSL.fromChunks [bs] of
@@ -140,6 +154,12 @@ fromRight (Right v) = v
 if' c a b = if c then a else b
 
 -- conduit
+
+data ConnData = ConnData {
+    connSource :: Producer IO ByteString
+  , connSink :: Consumer ByteString IO ()
+}
+
 
 sourceTQueue :: MonadIO m => TQueue a -> Source m a
 sourceTQueue chan = forever $ (liftIO $ atomically $ readTQueue chan) >>= DC.yield
@@ -179,7 +199,6 @@ maybeRead = fmap fst . listToMaybe . reads
 
 -- BYTESTRING
 toLazy bs = BSL.fromChunks [bs]
-
 
 -- FILESYSTEM
 

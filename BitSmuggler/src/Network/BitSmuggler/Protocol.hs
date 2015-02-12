@@ -75,8 +75,7 @@ padding = 69 -- pad bytes value
 msgHead = 33 -- byte prefixing a a length prefixed message in the stream
 
 recvPipe arq decrypt =
-  DC.map decrypt =$ DC.catMaybes =$ arq
-  =$ conduitGet (skipWhile (== padding) >> getMsg) =$ conduitGet get
+  DC.map decrypt =$ DC.catMaybes =$ arq =$ conduitGet (skipWhile (== padding) >> getMsg)
 
 sendPipe packetSize arq encrypt =
   DC.map (fmap $ encodeMsg) =$ isolateAndPad packetSize =$ arq =$ (encryptPipe encrypt)
@@ -279,10 +278,10 @@ encodeMsg :: Serialize a => a -> ByteString
 encodeMsg = runPut . putMsg . DS.encode
 
 -- length prefixed messages 
--- with a constant header (msgHead)
-putMsg m = putWord8 msgHead >> putWord32le (fromIntegral $ BS.length m) >> putByteString m
-getMsg = byte msgHead >> getWord32le >>= getBytes . fromIntegral
-
+-- with a constant header (msgHead) to separate it from the padding
+putMsg m = putWord8 msgHead >> putLenPrefixed m 
+getMsg :: Serialize a => Get a
+getMsg = byte msgHead >> getLenPrefixed 
 
 -- bittorrent stream handlers
 
