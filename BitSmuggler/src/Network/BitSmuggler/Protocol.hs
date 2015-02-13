@@ -206,9 +206,18 @@ launchPipes packetSize  initARQ encrypter decrypt
   return $ Pipe userRecv userSend
 
 pipeToConnData pipe = ConnData {
-      connSource = connSrc pipe
+      connSource = toProducer $ sourceTQueue (pipeRecv pipe) =$ dataStreamConduit
     , connSink = DC.map DataChunk =$ sinkTQueue (pipeSend pipe)
   }
+
+-- stops when it gets end of stream
+dataStreamConduit = do
+    upstream <- await
+    case upstream of
+      Nothing -> return ()
+      Just item  -> case item of 
+        DataChunk bs -> DC.yield bs >> dataStreamConduit
+        EndOfStream -> return () -- terminate 
 
 -- sends a EndOfStream message and blocks till 
 -- all messages are picked up from the queue
@@ -217,13 +226,6 @@ flushMsgQueue q = do
   atomically $ do
     empty <- isEmptyTQueue q 
     if empty then return () else retry
-
-
-connSrc pipe = do
-  item <- liftIO $ atomically $ readTQueue (pipeRecv pipe)
-  case item of 
-    DataChunk bs -> DC.yield bs >> connSrc pipe
-    EndOfStream -> return () -- terminate 
 
 -- messages 
 
@@ -275,7 +277,7 @@ instance Serialize DataUnit where
 
 -- encodes a custom serializable msg
 encodeMsg :: Serialize a => a -> ByteString
-encodeMsg = runPut . putMsg . DS.encode
+encodeMsg = runPut . putMsg
 
 -- length prefixed messages 
 -- with a constant header (msgHead) to separate it from the padding

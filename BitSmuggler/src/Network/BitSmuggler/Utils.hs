@@ -110,8 +110,11 @@ instance Serialize InfoHash where
 -- and has a constant size serialized 
 -- write cereal put and get in terms of that
 
--- cereal for len prefixed bytestrings with a word32 for length
-putLenPrefixed m = putWord32le (fromIntegral $ BS.length m) >> putByteString m
+-- cereal for len prefixed messages with a word32 for length
+putLenPrefixed m = do
+  let encoded = DS.encode m
+  putWord32le (fromIntegral $ BS.length encoded)
+  putByteString encoded
 
 getLenPrefixed :: Serialize a => Get a
 getLenPrefixed = do
