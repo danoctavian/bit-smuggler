@@ -3,6 +3,7 @@
 
 module Network.BitSmuggler.StreamMultiplex where
 
+import Prelude as P
 import Data.Typeable
 import Data.Conduit as DC
 import Data.Conduit.List as DC
@@ -36,17 +37,16 @@ this is generalized as it should be.
 
 data Multiplexer i o = Multiplexer {
                     activeConns ::  TVar (Map ConnId (Conn i))
-                  , outgoingQ :: TQueue (MuxMessage o) 
+                  , outgoingQ :: TQueue MuxMessage
                 }
 
 
 type ConnId = Word32 -- a unique identifier for the connection
-data Conn a = Conn {msgQ :: TQueue (WireMessage a)}
+data Conn a = Conn {msgQ :: TQueue DataUnit}
 
 -- messages 
 
--- all messages are labelled with an ID
-data MuxMessage a = MuxMessage ConnId (WireMessage a)
+data MuxMessage = MuxMessage ConnId DataUnit
 
 data ServerControl = ConnSuccess | ConnFail 
   deriving (Show, Eq)
@@ -57,7 +57,7 @@ data MultiplexException = ConnectionFailed
   deriving (Show, Typeable)
 instance Exception MultiplexException 
 
-type InitConn = Proxy.RemoteAddr -> (ConnData -> IO ()) -> IO ()
+type InitConn = (ConnData -> IO ()) -> IO ()
 
 dispatch activeConns onRecordMiss = awaitForever  $ \msg@(MuxMessage connId m) -> do
   actives <- liftIO $ atomically $ readTVar activeConns
@@ -70,37 +70,27 @@ addrToBS remote = BSC.pack $ case remote of
                                Left hostName -> hostName
                                Right ip -> show ip
 
-handleConn mux (MuxMessage connId (Control (ConnectTo remote))) = void $ forkIO $ do
-  handle (\(e :: SomeException) -> -- on exception we fail
-    atomically $ writeTQueue (outgoingQ mux)
-               $ MuxMessage connId $ Control $ ConnFail) $
+handleConn mux onConnection (MuxMessage connId smth) = void $ forkIO $ do
+  incomingQ <- newTQueueIO 
 
-    runTCPClient (clientSettings (fromIntegral . snd $ remote) (addrToBS . fst $ remote))
-    $ \appData -> do
-      -- connection is succesful therefore we notify
-      atomically $ writeTQueue (outgoingQ mux) $ MuxMessage connId $ Control $ ConnSuccess
+  atomically $ writeTQueue incomingQ smth -- push the first message
 
-      -- and create a record of it
-      incomingQ <- newTQueueIO 
-      atomically $ modifyTVar (activeConns mux) (Map.insert connId (Conn incomingQ))
+  atomically $ modifyTVar (activeConns mux) (Map.insert connId (Conn incomingQ))
 
-      -- proxy data back and forth
-      void $ concurrently
-        (appSource appData =$ DC.map (MuxMessage connId . Data . DataChunk) 
-                           $$ sinkTQueue (outgoingQ mux))
-        (incomingPipe incomingQ $$ (appSink appData))
+  connOutcome <- try' $ onConnection $ ConnData {
+       connSource = toProducer $ incomingPipe incomingQ
+     , connSink = DC.map (MuxMessage connId . DataChunk)
+                   =$ sinkTQueue (outgoingQ mux)
+     }
+  cleanupConn mux connId
 
+  return ()
 
 runServer :: ConnData -> (ConnData -> IO ()) -> IO ()
-runServer sharedPipe handle = do
+runServer sharedPipe onConnection = do
   mux <- initMux
-  _ <- runConcurrently $ (,)
-    <$> Concurrently (sourceTQueue (outgoingQ mux) =$ conduitPut putLenPrefixed
-                      $$ (connSink sharedPipe))
-    <*> Concurrently (connSource sharedPipe
-                      =$ conduitGet (getLenPrefixed :: Get (MuxMessage ClientControl))
-                      $$ dispatch (activeConns mux) (handleConn mux))
-  return ()
+  void $ runConcurrently $ concurrentProxy sharedPipe mux (handleConn mux onConnection)
+  
   
 
 runClient :: ConnData -> (InitConn -> IO ()) -> IO ()
@@ -109,56 +99,53 @@ runClient sharedPipe handle = do
   connIdVar <- newTVarIO 0
   let init = initConn mux connIdVar
  
-  _ <- runConcurrently $ (,,)
-    <$> Concurrently (sourceTQueue (outgoingQ mux) =$ conduitPut putLenPrefixed
-                      $$ (connSink sharedPipe))
-    <*> Concurrently (connSource sharedPipe
-                      =$ conduitGet (getLenPrefixed :: Get (MuxMessage ServerControl))
-                      $$ dispatch (activeConns mux) (\ _ -> return ()))
-    <*> Concurrently (handle init)
+  void $ runConcurrently $ concurrentProxy sharedPipe mux (\_ -> return ())
+                         *> Concurrently (handle init)
 
-  return ()
+
+
+-- forward traffic to and from
+concurrentProxy sharedPipe mux onRecordMiss = 
+        Concurrently (sourceTQueue (outgoingQ mux) =$ conduitPut putLenPrefixed
+                      $$ (connSink sharedPipe))
+     *> Concurrently (connSource sharedPipe
+                      =$ conduitGet (getLenPrefixed :: Get MuxMessage)
+                      $$ dispatch (activeConns mux) onRecordMiss)
+
 
 initMux = Multiplexer <$> newTVarIO Map.empty <*> newTQueueIO
 
 isData (Data _) = True
 fromData (Data d) = d
 
-initConn mux lastConnId remote handle = do 
-  incomingQ <- newTQueueIO 
-
+initConn mux lastConnId handle = do 
   connId <- atomically $ do
     lastId <- readTVar $ lastConnId
     writeTVar lastConnId (succ lastId) -- just increment
     return lastId
 
+  incomingQ <- newTQueueIO 
   atomically $ modifyTVar (activeConns mux) (Map.insert connId (Conn incomingQ))
- 
-  -- send request to connect 
-  atomically $ writeTQueue (outgoingQ mux)
-             $ MuxMessage connId $ Control $ ConnectTo remote 
-  (Control connResult) <- atomically $ readTQueue incomingQ
-  case connResult of 
-    ConnFail -> throwIO ConnectionFailed
-    ConnSuccess -> do
-        (handle $ ConnData  {
-              connSource = toProducer $ incomingPipe incomingQ
-           , connSink = DC.map (MuxMessage connId . Data . DataChunk)
-                         =$ sinkTQueue (outgoingQ mux)
-           }) 
-          `finally`  --cleanup
-             (do
-                atomically $ writeTQueue (outgoingQ mux)
-                           $ MuxMessage connId $ Data $ EndOfStream 
-                atomically $ modifyTVar (activeConns mux) (Map.delete connId))
+
+  (handle $ ConnData  {
+        connSource = toProducer $ incomingPipe incomingQ
+     , connSink = DC.map (MuxMessage connId . DataChunk)
+                   =$ sinkTQueue (outgoingQ mux)
+     }) 
+     -- on termination, we cleanup and let the exception bubble up (client-side)
+    `finally` (cleanupConn mux connId) 
+
+incomingPipe incomingQ = sourceTQueue incomingQ =$ dataStreamConduit 
+
+cleanupConn mux connId = do
+  atomically $ writeTQueue (outgoingQ mux) $ MuxMessage connId $ EndOfStream 
+  atomically $ modifyTVar (activeConns mux) (Map.delete connId)
 
 
-incomingPipe incomingQ = sourceTQueue incomingQ =$ DC.filter isData
-                         =$ DC.map fromData =$ dataStreamConduit 
  
 
 -- serialization
-instance (Serialize a) => Serialize (MuxMessage a) where
+instance Serialize MuxMessage where
   put (MuxMessage id m) = putWord32be id >> put m
   get =  MuxMessage <$> getWord32be <*> get
 
