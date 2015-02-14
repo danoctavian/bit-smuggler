@@ -59,16 +59,11 @@ instance Exception MultiplexException
 
 type InitConn = (ConnData -> IO ()) -> IO ()
 
-dispatch activeConns onRecordMiss = awaitForever  $ \msg@(MuxMessage connId m) -> do
-  actives <- liftIO $ atomically $ readTVar activeConns
-  case Map.lookup connId actives of
-    (Just conn) -> liftIO $ atomically $ writeTQueue (msgQ conn) m
-    Nothing -> liftIO $ onRecordMiss msg
 
-
-addrToBS remote = BSC.pack $ case remote of
-                               Left hostName -> hostName
-                               Right ip -> show ip
+runServer :: ConnData -> (ConnData -> IO ()) -> IO ()
+runServer sharedPipe onConnection = do
+  mux <- initMux
+  void $ runConcurrently $ concurrentProxy sharedPipe mux (handleConn mux onConnection)
 
 handleConn mux onConnection (MuxMessage connId smth) = void $ forkIO $ do
   incomingQ <- newTQueueIO 
@@ -77,21 +72,13 @@ handleConn mux onConnection (MuxMessage connId smth) = void $ forkIO $ do
 
   atomically $ modifyTVar (activeConns mux) (Map.insert connId (Conn incomingQ))
 
+  -- run user supplied handle and catch all exceptions
   connOutcome <- try' $ onConnection $ ConnData {
        connSource = toProducer $ incomingPipe incomingQ
      , connSink = DC.map (MuxMessage connId . DataChunk)
                    =$ sinkTQueue (outgoingQ mux)
      }
   cleanupConn mux connId
-
-  return ()
-
-runServer :: ConnData -> (ConnData -> IO ()) -> IO ()
-runServer sharedPipe onConnection = do
-  mux <- initMux
-  void $ runConcurrently $ concurrentProxy sharedPipe mux (handleConn mux onConnection)
-  
-  
 
 runClient :: ConnData -> (InitConn -> IO ()) -> IO ()
 runClient sharedPipe handle = do
@@ -101,7 +88,6 @@ runClient sharedPipe handle = do
  
   void $ runConcurrently $ concurrentProxy sharedPipe mux (\_ -> return ())
                          *> Concurrently (handle init)
-
 
 
 -- forward traffic to and from
@@ -135,14 +121,25 @@ initConn mux lastConnId handle = do
      -- on termination, we cleanup and let the exception bubble up (client-side)
     `finally` (cleanupConn mux connId) 
 
+
+dispatch activeConns onRecordMiss = awaitForever  $ \msg@(MuxMessage connId m) -> do
+  actives <- liftIO $ atomically $ readTVar activeConns
+  case Map.lookup connId actives of
+    (Just conn) -> liftIO $ atomically $ writeTQueue (msgQ conn) m
+    Nothing -> liftIO $ onRecordMiss msg
+
+
+addrToBS remote = BSC.pack $ case remote of
+                               Left hostName -> hostName
+                               Right ip -> show ip
+
+
 incomingPipe incomingQ = sourceTQueue incomingQ =$ dataStreamConduit 
 
 cleanupConn mux connId = do
   atomically $ writeTQueue (outgoingQ mux) $ MuxMessage connId $ EndOfStream 
   atomically $ modifyTVar (activeConns mux) (Map.delete connId)
 
-
- 
 
 -- serialization
 instance Serialize MuxMessage where
