@@ -13,10 +13,12 @@ import Data.Maybe
 import Data.Text as Txt
 import Control.Exception
 import Data.IP
+import Network.Socket as NS
 
 import System.IO as Sys
 import System.Random
 
+import Data.Streaming.Network 
 import Network.TCP.Proxy.Client
 import Network.TCP.Proxy.Socks4 as Socks4
 import qualified Network.TCP.Proxy.Server as Proxy
@@ -401,7 +403,8 @@ echoServer = do
     DC.sourceList ["omg"] $$ (appSink appData)
     P.putStrLn "sent smth after connection was closed"
 
-    
+
+testGetSock = getSocketFamilyTCP "www.google.com" 80 NS.AF_UNSPEC
 
 ---- various toy functions
 
