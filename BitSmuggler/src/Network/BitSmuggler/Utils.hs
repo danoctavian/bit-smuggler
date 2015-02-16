@@ -10,6 +10,7 @@ module Network.BitSmuggler.Utils (
   , eitherToMaybe
   , fromRight
   , try'
+  , catchAny
   , if'
   , sourceTQueue
   , sinkTQueue
@@ -163,7 +164,6 @@ data ConnData = ConnData {
   , connSink :: Consumer ByteString IO ()
 }
 
-
 sourceTQueue :: MonadIO m => TQueue a -> Source m a
 sourceTQueue chan = forever $ (liftIO $ atomically $ readTQueue chan) >>= DC.yield
 
@@ -181,6 +181,9 @@ portNumFixEndian = (\(Right v) -> v) . runGet getWord16be  . runPut . putWord16h
 
 try' :: IO a -> IO (Either SomeException a)
 try' = try
+
+catchAny :: IO a -> (SomeException -> IO a) -> IO a
+catchAny = Control.Exception.catch
 
 alwaysRetry n = Catch.Handler $ \ (e :: SomeException) -> return True
 

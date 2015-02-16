@@ -20,7 +20,26 @@ import Network.BitSmuggler.Common
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.TorrentFile
 
+import Network.TCP.Proxy.Server (RemoteAddr)
 import qualified Network.BitTorrent.ClientControl.UTorrent as UT
+
+
+-- PROXY PROTOCOL
+data ConnRequest = ConnRequest RemoteAddr
+  deriving (Show, Eq)
+
+-- maybe discard this. it's just a boolean
+data ConnResponse = ConnSuccess | ConnFailure
+  deriving (Show, Eq)
+
+instance Serialize ConnRequest where
+  put (ConnRequest remote) = undefined
+  get = undefined
+
+instance Serialize ConnResponse where
+  put ConnSuccess = putWord8 0
+  put ConnFailure = putWord8 0
+  get = (byte 0 >> (return ConnSuccess)) <|> (byte 1 >> (return ConnFailure))
 
 uTorrentConnect host port = UT.makeUTorrentConn host port ("admin", "")
 
@@ -28,6 +47,7 @@ derivePaths root = (root </> "cache", root </> "utorrent-client", root </> "cont
 
 data ServerDescriptorFile = ServerDescriptorFile IP Key [ContactFileMetadata]
   deriving (Show, Eq)
+
 
 data ServerConfigFile = ServerConfigFile Key [ContactFileMetadata]
   deriving (Show, Eq)

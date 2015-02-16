@@ -24,7 +24,6 @@ import Control.Monad.IO.Class
 import Data.ByteString as BS
 import Data.ByteString.Char8 as BSC
 
-
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.Protocol
 
@@ -127,11 +126,6 @@ dispatch activeConns onRecordMiss = awaitForever  $ \msg@(MuxMessage connId m) -
   case Map.lookup connId actives of
     (Just conn) -> liftIO $ atomically $ writeTQueue (msgQ conn) m
     Nothing -> liftIO $ onRecordMiss msg
-
-
-addrToBS remote = BSC.pack $ case remote of
-                               Left hostName -> hostName
-                               Right ip -> show ip
 
 
 incomingPipe incomingQ = sourceTQueue incomingQ =$ dataStreamConduit 
