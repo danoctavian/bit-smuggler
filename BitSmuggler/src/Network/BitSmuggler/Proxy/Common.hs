@@ -28,18 +28,23 @@ import qualified Network.BitTorrent.ClientControl.UTorrent as UT
 data ConnRequest = ConnRequest RemoteAddr
   deriving (Show, Eq)
 
+instance Serialize IP where
+  put (IPv4 ip) = putWord8 0 *> put ip
+  put (IPv6 ip) = putWord8 1 *> put ip
+  get = (byte 0 *> (IPv4 <$> get)) <|> (byte 1 *> (IPv6 <$> get))
+
 -- maybe discard this. it's just a boolean
-data ConnResponse = ConnSuccess | ConnFailure
+data ConnResponse = ConnSuccess (IP, PortNum) | ConnFailure
   deriving (Show, Eq)
 
 instance Serialize ConnRequest where
-  put (ConnRequest remote) = undefined
-  get = undefined
+  put (ConnRequest remote) = put remote
+  get = ConnRequest <$> get 
 
 instance Serialize ConnResponse where
-  put ConnSuccess = putWord8 0
-  put ConnFailure = putWord8 0
-  get = (byte 0 >> (return ConnSuccess)) <|> (byte 1 >> (return ConnFailure))
+  put (ConnSuccess remote) = putWord8 0 >> put remote
+  put ConnFailure = putWord8 1
+  get = (byte 0 >> (ConnSuccess <$> get)) <|> (byte 1 >> (return ConnFailure))
 
 uTorrentConnect host port = UT.makeUTorrentConn host port ("admin", "")
 

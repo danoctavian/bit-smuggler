@@ -15,7 +15,7 @@ import Control.Monad
 
 import Data.ByteString as BS
 import Data.ByteString.Char8 as BSC
-
+import Network.TCP.Proxy.Server as Proxy
 
 import Network.BitSmuggler.Server as Server
 import Network.BitSmuggler.Common
@@ -68,12 +68,12 @@ proxyServer connData = Mux.runServer connData $ \conn -> do
   (postReqSrc, [ConnRequest (addr, port)]) <- src $$++ conduitGet get =$ DC.take 1
 
   (runTCPClient (clientSettings (fromIntegral port) (addrToBS addr)) $ \appData -> do
-    DC.sourceList [DS.encode True] $$ (connSink conn)
+    DC.sourceList [DS.encode $ ConnSuccess $ toIP $ appSockAddr appData] $$ (connSink conn)
     void $ concurrently   
       (postReqSrc $$+- appSink appData) 
       (appSource appData $$ (connSink conn))
    -- in case connection fails
-   ) `catchAny` (\_ -> DC.sourceList [DS.encode False] $$ (connSink conn))
+   ) `catchAny` (\_ -> DC.sourceList [DS.encode ConnFailure] $$ (connSink conn))
   return ()
 
 addrToBS remote = BSC.pack $ case remote of

@@ -16,6 +16,9 @@ import Control.Monad
 import Data.ByteString as BS
 import Data.ByteString.Char8 as BSC
 
+import Network.TCP.Proxy.Server as Proxy
+import Network.TCP.Proxy.Socks4 as Socks4
+
 
 import Network.BitSmuggler.Client as Client 
 import Network.BitSmuggler.Common
@@ -45,6 +48,8 @@ run = do
   Client.clientConnect (ClientConfig btC serverDescriptor cachePath) proxyClient 
   return ()
 
+defaultSocksProxyPort = 9999
+
 defaultBTConfig = BTClientConfig {
     pubBitTorrentPort = 5881
   , socksProxyPort = 2001
@@ -55,4 +60,20 @@ defaultBTConfig = BTClientConfig {
 }
 
 proxyClient connData = do
-  return ()
+  Mux.runClient connData $ \initMuxConn ->  do
+    Proxy.run $ Config {
+        proxyPort = defaultSocksProxyPort
+      , initHook = Proxy.initNoOpHook 
+      , handshake = Socks4.serverProtocol
+      , makeConn = \remote proxyData -> do 
+         initMuxConn $ \conn -> do
+           DC.sourceList [DS.encode $ ConnRequest remote] $$ (connSink conn) 
+           (postResSrc, [response]) <- (connSource conn) $$+ conduitGet get =$ DC.take 1 
+           case response of
+             ConnFailure -> throwIO Proxy.ConnectionFailed 
+             ConnSuccess ip -> do
+               -- TODO: i'm not sure about this working correctly
+               (newSrc, finalize) <- unwrapResumable postResSrc
+               proxyData (toProducer newSrc) (connSink conn) ip `finally` (finalize)
+      }
+
