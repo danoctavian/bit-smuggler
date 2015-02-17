@@ -1,6 +1,5 @@
 module Network.BitSmuggler.Proxy.Client where
 
-
 import System.Directory
 import System.FilePath.Posix
 import Data.Map as Map
@@ -26,7 +25,7 @@ import qualified Network.BitSmuggler.StreamMultiplex as Mux
 import Network.BitSmuggler.Proxy.Common
 import Network.BitSmuggler.Utils
 
-descFileName = "serverDescriptor"
+descFileName = "server-descriptor"
 
 run :: IO ()  
 run = do
@@ -46,10 +45,6 @@ run = do
   Client.clientConnect (ClientConfig btC serverDescriptor cachePath) proxyClient 
   return ()
 
- 
-proxyClient connData = do
-  return ()
-
 defaultBTConfig = BTClientConfig {
     pubBitTorrentPort = 5881
   , socksProxyPort = 2001
@@ -59,4 +54,5 @@ defaultBTConfig = BTClientConfig {
   , connectToClient = uTorrentConnect
 }
 
-
+proxyClient connData = do
+  return ()

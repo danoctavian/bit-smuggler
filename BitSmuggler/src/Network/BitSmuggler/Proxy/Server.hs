@@ -78,4 +78,4 @@ proxyServer connData = Mux.runServer connData $ \conn -> do
 
 addrToBS remote = BSC.pack $ case remote of
                                 Left hostName -> hostName
-                                Right ip -> show ip    
+                                Right ip -> show ip

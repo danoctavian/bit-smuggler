@@ -110,6 +110,8 @@ instance Serialize InfoHash where
 -- given a type that has a Binary instance
 -- and has a constant size serialized 
 -- write cereal put and get in terms of that
+-- wanted to write binary a -> serialize a but i get a lot of 
+-- overlapping instances so fuck it
 
 -- cereal for len prefixed messages with a word32 for length
 putLenPrefixed m = do
@@ -121,8 +123,6 @@ getLenPrefixed :: Serialize a => Get a
 getLenPrefixed = do
   len <- getWord32le
   DS.isolate (fromIntegral len) get
-
-
 
 binGet sz = do
     bs <- getBytes sz

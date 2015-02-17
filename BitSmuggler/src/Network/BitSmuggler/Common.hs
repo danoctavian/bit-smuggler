@@ -281,7 +281,7 @@ startProxies btConf onConn = do
                  proxyPort = revProxyPort btConf
                , initHook = P.flip (onConn Reverse)
                , handshake = revProxy (read localhost :: IP) (pubBitTorrentPort btConf)
-               , redirects = Map.empty
+               , makeConn = Proxy.directTCPConn
              }
 
   -- forward socks 
@@ -289,9 +289,15 @@ startProxies btConf onConn = do
                  proxyPort = socksProxyPort btConf
                , initHook = onConn Forward
                , handshake = Socks4.serverProtocol
-               , redirects = outgoingRedirects btConf
+
+                -- applying any potential redirects to outgoing connections
+               , makeConn = \remote handle ->
+                       directTCPConn (redirect remote $ outgoingRedirects btConf) handle
             }
   return (reverseProxy, forwardProxy)
+
+redirect addr redirectMap = maybe addr id (Map.lookup addr redirectMap)
+
 
 -- protocol for a rev proxy
 -- just redirects all connections to a single address
