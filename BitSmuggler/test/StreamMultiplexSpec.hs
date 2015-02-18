@@ -52,7 +52,8 @@ spec = do
       return ()
 
   describe "mux tcp proxy" $ do
-    it "proxies http requests for static files" $ P.putStrLn "wtf" >> testHTTPProxy 
+    it "proxies http requests for static files" $ P.putStrLn "wtf"
+         >> (testHTTPProxy `catchAny`  (\e -> debugM logger $ "EXCEPTION :" ++ show e))
   return ()
 
 testHTTPProxy = runResourceT $ do
@@ -70,13 +71,17 @@ testHTTPProxy = runResourceT $ do
   allocLinkedAsync $ async $ Proxy.proxyServer serverConnData
   allocLinkedAsync $ async $ Proxy.proxyClient proxyPort clientConnData
 
-  liftIO $ forM ["tinyFile.txt"] $ \fileName -> do
-    let fullPath = (fromText root) </> (fromText fileName)
-    contents <- liftIO $ P.readFile (T.unpack $ fromRight $ toText fullPath)
-    (_, proxiedContents) <- liftIO $ curlGetString
-       (localhost ++ ":" ++ (show serverPort) ++ "/" ++ T.unpack fileName)
-       [Network.Curl.Opts.CurlProxy $ "socks4://127.0.0.1:" ++ (show proxyPort)]
-    proxiedContents `shouldBe` contents
+
+  -- run concurrent requests
+  liftIO $ (P.flip mapConcurrently)
+           (P.take 10 $ P.cycle ["tinyFile.txt", "tinyFile0.txt", "tinyFile1.txt"])
+    $ \fileName -> do
+      let fullPath = (fromText root) </> (fromText fileName)
+      contents <- liftIO $ P.readFile (T.unpack $ fromRight $ toText fullPath)
+      (_, proxiedContents) <- liftIO $ curlGetString
+         (localhost ++ ":" ++ (show serverPort) ++ "/" ++ T.unpack fileName)
+         [Network.Curl.Opts.CurlProxy $ "socks4://127.0.0.1:" ++ (show proxyPort)]
+      proxiedContents `shouldBe` contents
   return ()
 
 streamsBothWays arbData1 arbData2
