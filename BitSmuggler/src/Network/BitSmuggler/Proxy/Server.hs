@@ -1,4 +1,7 @@
-module Network.BitSmuggler.Proxy.Server where
+module Network.BitSmuggler.Proxy.Server (
+    proxyServer
+  , Network.BitSmuggler.Proxy.Server.run
+) where
 
 import System.Directory
 import System.FilePath.Posix
@@ -13,9 +16,11 @@ import Control.Concurrent.Async
 import Control.Exception
 import Control.Monad
 
+import System.Log.Logger
+
 import Data.ByteString as BS
 import Data.ByteString.Char8 as BSC
-import Network.TCP.Proxy.Server as Proxy
+import Network.TCP.Proxy.Server as Proxy hiding (logger)
 
 import Network.BitSmuggler.Server as Server
 import Network.BitSmuggler.Common
@@ -28,9 +33,7 @@ import Network.BitSmuggler.Utils
 
 {-
   proxy server for TCP traffic
-  
 -- doesn't support bind or UDP
-
 -}
 
 configFileName = "bitsmuggler.conf"

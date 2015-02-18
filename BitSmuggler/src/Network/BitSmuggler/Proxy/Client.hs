@@ -1,4 +1,7 @@
-module Network.BitSmuggler.Proxy.Client where
+module Network.BitSmuggler.Proxy.Client (
+    proxyClient
+  , Network.BitSmuggler.Proxy.Client.run  
+) where
 
 import System.Directory
 import System.FilePath.Posix
@@ -13,10 +16,12 @@ import Control.Concurrent.Async
 import Control.Exception
 import Control.Monad
 
+import System.Log.Logger
+
 import Data.ByteString as BS
 import Data.ByteString.Char8 as BSC
 
-import Network.TCP.Proxy.Server as Proxy
+import Network.TCP.Proxy.Server as Proxy hiding (logger)
 import Network.TCP.Proxy.Socks4 as Socks4
 
 
@@ -45,7 +50,8 @@ run = do
                , outgoingRedirects = Map.empty -- no redirects
                }
 
-  Client.clientConnect (ClientConfig btC serverDescriptor cachePath) proxyClient 
+  Client.clientConnect (ClientConfig btC serverDescriptor cachePath)
+                       $ proxyClient defaultSocksProxyPort
   return ()
 
 defaultSocksProxyPort = 9999
@@ -59,10 +65,10 @@ defaultBTConfig = BTClientConfig {
   , connectToClient = uTorrentConnect
 }
 
-proxyClient connData = do
+proxyClient socksPort connData = do
   Mux.runClient connData $ \initMuxConn ->  do
     Proxy.run $ Config {
-        proxyPort = defaultSocksProxyPort
+        proxyPort = socksPort  
       , initHook = Proxy.initNoOpHook 
       , handshake = Socks4.serverProtocol
       , makeConn = \remote proxyData -> do 
@@ -76,4 +82,3 @@ proxyClient connData = do
                (newSrc, finalize) <- unwrapResumable postResSrc
                proxyData (toProducer newSrc) (connSink conn) ip `finally` (finalize)
       }
-

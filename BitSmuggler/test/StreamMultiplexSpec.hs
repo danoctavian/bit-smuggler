@@ -14,14 +14,28 @@ import Control.Concurrent
 import Control.Monad.IO.Class
 import Data.Maybe as M
 import Data.ByteString as BS
+import Data.Text as T
+import System.Log.Logger
+
 import Control.Monad
+import Control.Monad.Trans.Resource
+
+import Network.Curl
+import Network.Curl.Opts
+import Network.Wai.Application.Static
+import Network.Wai.Handler.Warp as Warp
 
 {-
 import Control.Monad.ST
 -}
 
+import Filesystem.Path.CurrentOS
+
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.StreamMultiplex
+
+import Network.BitSmuggler.Proxy.Client as Proxy
+import Network.BitSmuggler.Proxy.Server as Proxy
 
 main :: IO ()
 main = hspec spec
@@ -36,9 +50,34 @@ spec = do
     it "mutiplexes many connections" $ do 
       P.putStrLn "todo"
       return ()
-    return ()
+
+  describe "mux tcp proxy" $ do
+    it "proxies http requests for static files" $ P.putStrLn "wtf" >> testHTTPProxy 
   return ()
 
+testHTTPProxy = runResourceT $ do
+  liftIO $ updateGlobalLogger logger  (setLevel DEBUG)
+
+  let root = "test-data/test-server-root"
+  let serverPort = 3333
+  let proxyPort = 1080
+  let app = staticApp $ defaultWebAppSettings (fromText root)
+
+  allocAsync $ async $ Warp.run serverPort app
+
+  (clientConnData, serverConnData) <- liftIO $  initSTMConnData
+
+  allocLinkedAsync $ async $ Proxy.proxyServer serverConnData
+  allocLinkedAsync $ async $ Proxy.proxyClient proxyPort clientConnData
+
+  liftIO $ forM ["tinyFile.txt"] $ \fileName -> do
+    let fullPath = (fromText root) </> (fromText fileName)
+    contents <- liftIO $ P.readFile (T.unpack $ fromRight $ toText fullPath)
+    (_, proxiedContents) <- liftIO $ curlGetString
+       (localhost ++ ":" ++ (show serverPort) ++ "/" ++ T.unpack fileName)
+       [Network.Curl.Opts.CurlProxy $ "socks4://127.0.0.1:" ++ (show proxyPort)]
+    proxiedContents `shouldBe` contents
+  return ()
 
 streamsBothWays arbData1 arbData2
   = monadicIO $ testStream (toInputData arbData1) (toInputData arbData2)
@@ -48,14 +87,7 @@ streamsBothWays arbData1 arbData2
 testStream :: [ByteString] -> [ByteString] -> PropertyM IO ()
 testStream clientToServer serverToClient = do
   -- setting up 2 way channel
-  toServer <- liftIO $ newTQueueIO
-  toClient <- liftIO $ newTQueueIO
-
-  let clientConnData = ConnData {connSource = toProducer $ sourceTQueue toClient
-                                , connSink = sinkTQueue toServer}
-  let serverConnData = ConnData {connSource = toProducer $ sourceTQueue toServer 
-                                , connSink = sinkTQueue toClient}
-
+  (clientConnData, serverConnData) <- liftIO $ initSTMConnData
 
   clientResult <- liftIO $ newEmptyTMVarIO 
   serverResult <- liftIO $ newEmptyTMVarIO
@@ -78,7 +110,16 @@ testStream clientToServer serverToClient = do
   liftIO $ killThread tid
       
   return ()
- 
+
+initSTMConnData = do
+  toServer <- newTQueueIO
+  toClient <- newTQueueIO
+
+  let clientConnData = ConnData {connSource = toProducer $ sourceTQueue toClient
+                                , connSink = sinkTQueue toServer}
+  let serverConnData = ConnData {connSource = toProducer $ sourceTQueue toServer 
+                                , connSink = sinkTQueue toClient}
+  return (clientConnData, serverConnData)
 
 streamAndValidate connData recvData sendData
   = fmap fst $ concurrently
