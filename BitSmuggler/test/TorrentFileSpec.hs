@@ -25,11 +25,14 @@ import Data.Torrent
 import Data.Maybe
 import Data.BEncode
 
+import Network.BitTorrent.ClientControl as CC
+
 import Network.BitSmuggler.TorrentFile as TF
 import Network.BitTorrent.Types as BT
 
 import Network.BitSmuggler.BitTorrentParser as BT
 import qualified Network.BitSmuggler.Protocol as Proto
+import Network.BitSmuggler.Common (isUsedUp)
 import Network.BitSmuggler.Utils
 
 main :: IO ()
@@ -119,6 +122,26 @@ spec = do
             return $ loadedBlock == (block p)
           P.length (P.filter (P.id) sames) `shouldBe` P.length justPieces
       return ()
+
+  describe "file replenisher" $ do
+    it "appreciates if a file is used up" $ do
+      P.putStrLn "wtf"
+      (isUsedUp $ CC.Torrent { progress = 800
+                            , downSpeed = 0
+                            , peersConnected = 1, seedsConnected = 1})
+        `shouldBe` True
+      (isUsedUp $ CC.Torrent { progress = 600
+                            , downSpeed = 0
+                            , peersConnected = 0, seedsConnected = 0})
+        `shouldBe` False 
+      (isUsedUp $ CC.Torrent { progress = 610
+                            , downSpeed = 40000
+                            , peersConnected = 1, seedsConnected = 0})
+        `shouldBe` False 
+      (isUsedUp $ CC.Torrent { progress = 800
+                            , downSpeed = 300000
+                            , peersConnected = 1, seedsConnected = 0})
+        `shouldBe` False 
         
   return ()
 
