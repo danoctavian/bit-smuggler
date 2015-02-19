@@ -11,11 +11,15 @@ import Control.Concurrent.Async
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TQueue
 import Control.Concurrent
+import Control.Exception hiding (assert)
+
 import Control.Monad.IO.Class
 import Data.Maybe as M
 import Data.ByteString as BS
 import Data.Text as T
 import System.Log.Logger
+
+import Data.ByteString.Char8 as BSC
 
 import Control.Monad
 import Control.Monad.Trans.Resource
@@ -56,8 +60,8 @@ spec = do
          >> (testHTTPProxy `catchAny`  (\e -> debugM logger $ "EXCEPTION :" ++ show e))
   return ()
 
-testHTTPProxy = runResourceT $ do
-  liftIO $ updateGlobalLogger logger  (setLevel DEBUG)
+testHTTPProxy = void $ forM [1..10] $ \i -> runResourceT $  do
+--  liftIO $ updateGlobalLogger logger  (setLevel DEBUG)
 
   let root = "test-data/test-server-root"
   let serverPort = 3333
@@ -68,20 +72,34 @@ testHTTPProxy = runResourceT $ do
 
   (clientConnData, serverConnData) <- liftIO $  initSTMConnData
 
-  allocLinkedAsync $ async $ Proxy.proxyServer serverConnData
-  allocLinkedAsync $ async $ Proxy.proxyClient proxyPort clientConnData
+  allocLinkedAsync $ async
+    $ Proxy.proxyServer serverConnData  `catchAny` (\e -> do
+      debugM logger $ "terminated the server thread " ++ show e
+      throwIO e)
+  allocLinkedAsync $ async
+    $ (Proxy.proxyClient proxyPort clientConnData) `catchAny` (\e -> do
+        debugM logger $ "terminated the client thread " ++ show e
+        throwIO e)
 
+  liftIO $ waitForServer (BSC.pack localhost) (fromIntegral serverPort)
+  liftIO $ waitForServer (BSC.pack localhost) (fromIntegral proxyPort)
+
+  liftIO $ debugM logger "the servers are available. continuing with testing ..."
 
   -- run concurrent requests
-  liftIO $ (P.flip mapConcurrently)
+  results <- liftIO $ (P.flip mapConcurrently)
            (P.take 10 $ P.cycle ["tinyFile.txt", "tinyFile0.txt", "tinyFile1.txt"])
     $ \fileName -> do
       let fullPath = (fromText root) </> (fromText fileName)
       contents <- liftIO $ P.readFile (T.unpack $ fromRight $ toText fullPath)
-      (_, proxiedContents) <- liftIO $ curlGetString
+      (code, proxiedContents) <- liftIO $ curlGetString
          (localhost ++ ":" ++ (show serverPort) ++ "/" ++ T.unpack fileName)
          [Network.Curl.Opts.CurlProxy $ "socks4://127.0.0.1:" ++ (show proxyPort)]
+      debugM logger "evaluate the results"
+      code `shouldBe` CurlOK
       proxiedContents `shouldBe` contents
+
+  liftIO $ debugM logger "DONE RUNNING TEST"
   return ()
 
 streamsBothWays arbData1 arbData2
@@ -131,5 +149,3 @@ streamAndValidate connData recvData sendData
     ((connSource connData $$ DC.consume)
      >>= (\out -> return $ BS.concat out == BS.concat recvData))
     (DC.sourceList sendData $$ (connSink connData))
- 
-

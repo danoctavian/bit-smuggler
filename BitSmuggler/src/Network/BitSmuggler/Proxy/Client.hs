@@ -24,7 +24,6 @@ import Data.ByteString.Char8 as BSC
 import Network.TCP.Proxy.Server as Proxy hiding (logger)
 import Network.TCP.Proxy.Socks4 as Socks4
 
-
 import Network.BitSmuggler.Client as Client 
 import Network.BitSmuggler.Common
 import Network.BitSmuggler.TorrentClientProc

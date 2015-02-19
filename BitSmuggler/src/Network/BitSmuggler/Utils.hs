@@ -35,6 +35,7 @@ module Network.BitSmuggler.Utils (
   , ConnData (..)
   , putLenPrefixed
   , getLenPrefixed
+  , waitForServer
 ) where
 
 import Data.Typeable
@@ -52,6 +53,7 @@ import System.FilePath.Posix
 import System.Directory
 
 import Data.Conduit as DC
+import Data.Conduit.Network as DC
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TChan
 import Control.Monad.IO.Class
@@ -210,3 +212,11 @@ toLazy bs = BSL.fromChunks [bs]
 
 -- WARNING: doesn't deal with dot dots
 absolutePath path = fmap ((flip (</>)) path) getCurrentDirectory
+
+
+-- NETWORK
+-- try to connect to a TCP server on
+-- given port and host. keep retrying until 1 connection succeeds
+waitForServer hostname port
+  = recoverAll (constantDelay $ 10 ^ 5)
+    $ runTCPClient (clientSettings port hostname) (\_ -> return ())
