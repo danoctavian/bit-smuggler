@@ -36,6 +36,9 @@ import qualified Network.BitTorrent.Shepherd as Tracker
 import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature, logger)
 import Network.TCP.Proxy.Socks4 as Socks4
 
+import Network.BitSmuggler.Proxy.Client (proxyClient)
+import Network.BitSmuggler.Proxy.Server (proxyServer)
+
 
 import Data.Conduit as DC
 import Data.Conduit.List as DC
@@ -140,7 +143,10 @@ runClient torrentProcPath cachePath serverDesc = do
                              = redirectToRev (serverAddr serverDesc) serverBTClientConfig
               }
 
-  Client.clientConnect (ClientConfig btC serverDesc cachePath) clientChunkExchange
+  Client.clientConnect (ClientConfig btC serverDesc cachePath) $ \c -> do
+   debugM logger "client is working..."
+   proxyClient 1080 c  
+--   clientChunkExchange c
   return ()
 
 runServer torrentProcPath cachePath contact (serverDesc, serverSk) = do
@@ -152,7 +158,11 @@ runServer torrentProcPath cachePath contact (serverDesc, serverSk) = do
                   = redirectToRev (serverAddr serverDesc) clientBTClientConfig 
                }
 
-  Server.listen (ServerConfig serverSk btC [contact] cachePath) serverChunkExchange
+  Server.listen (ServerConfig serverSk btC [contact] cachePath) $ \c -> do
+    debugM logger "server is working..."
+    proxyServer c
+    debugM logger "SERVER TERMINATED"
+--    serverChunkExchange c
   return ()
 
 -- were are configuring the proxies to redirect the bittorrent traffic
@@ -168,7 +178,7 @@ chunks = [ BS.replicate 1000 99, BS.replicate (10 ^ 4)  200
          , BS.replicate (10 ^ 3)  201
          , BS.replicate (10 ^ 3)  202] P.++ smallChunks
 
-smallChunks = P.take 200 $ P.map (BS.replicate (10 ^ 2)) $ P.cycle [1..255]
+smallChunks = P.take 300 $ P.map (BS.replicate (10 ^ 2)) $ P.cycle [1..255]
 
 -- TODO: reabilitate those to use the new connData
 serverChunkExchange c = do
