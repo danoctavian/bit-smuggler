@@ -20,6 +20,7 @@ module Network.BitSmuggler.Common (
   , makeRandPartial
   , giveClientPartialFile
   , isUsedUp
+  , expectedMaxProgress
 ) where
 
 import Prelude as P
@@ -257,7 +258,10 @@ maxProgress = 1000
 -- were to randomly own a certain fraction of the file and then exchange
 expectedMaxProgress
   = maxProgress `div` pieceCountDiv
-    + (round $ (1 - ( 1 / (fromIntegral pieceCountDiv)) ^ 2) * (fromIntegral maxProgress))
+    + (round $ (1 - fraction) * fraction * (fromIntegral maxProgress))
+  where
+    fraction = 1 / (fromIntegral pieceCountDiv)
+
 -- a torrent is used up if it downloaded enough pieces that it 
 -- is not able to build lengthy connections anymore for both
 -- downstream and upstream (the downstream is the problem here)

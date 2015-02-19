@@ -226,7 +226,8 @@ handleConnection stateVar pieceHs secretKey userHandle disconnectGate = do
 
         Control (ConnRequest keyRepr (Just token)) -> do
           -- client is requesting session recovery using token
-          maybeConn <- atomically $ fmap (Map.lookup token . activeConns) $ readTVar stateVar
+          maybeConn <- atomically $ fmap (Map.lookup token . activeConns)
+                                  $ readTVar stateVar
           case maybeConn of
             Just conn -> do
               -- TODO: implement session loading
@@ -274,9 +275,8 @@ runConnection packetSize arq encrypter decrypt token userHandle ps@(DataPipes {.
 
   return ()
 
-
 -- FILE REPLENISHER
-replenishWorkerCount = 1
+replenishWorkerCount = 2
 replenishFiles btClientConn btProc files = runResourceT $ do
   jobQueue <- liftIO $ newTQueueIO
   setVar <- liftIO $ newTVarIO Set.empty
@@ -288,9 +288,9 @@ replenishFiles btClientConn btProc files = runResourceT $ do
     ts <- liftIO $ listTorrents btClientConn
     forM ts $ \t -> when (isUsedUp t) $ do
       let ih = torrentID t
-      underWork <- fmap (Set.member ih) $ liftIO $ atomically $ readTVar setVar
-      when (not underWork) $ liftIO $ atomically $ modifyTVar setVar (Set.insert ih)
-                                                   >> writeTQueue jobQueue ih
+      liftIO $ atomically $ do
+        underWork <- fmap (Set.member ih) $ readTVar setVar
+        when (not underWork) $ modifyTVar setVar (Set.insert ih) >> writeTQueue jobQueue ih
 
 replenishWorker btClientConn btProc files jobQueue underWork = forever $ do
   infoHash <- atomically $ readTQueue jobQueue

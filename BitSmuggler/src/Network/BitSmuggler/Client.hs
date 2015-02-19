@@ -26,7 +26,6 @@ import Network.BitSmuggler.Protocol
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.ARQ as ARQ
 
-
 {-
 
 client is designed to support 1 single connection
