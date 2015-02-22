@@ -10,22 +10,16 @@ pluggable transport for censorship circumvention
 check out Chapter 1 intro in https://github.com/danoctavian/bit-smuggler/tree/master/docs/Report.pdf for an overview of the project.
 
 
-relies on:
+Install instructions
+--------------------
 
-https://github.com/danoctavian/tcp-proxy
+Instructions are Ubuntu specific and this has been verified to work on
+Ubuntu 12.04 correctly.
 
-https://github.com/danoctavian/shepherd
-
-https://github.com/danoctavian/helligator
-
-https://github.com/danoctavian/free-network-protocol
-
-https://github.com/danoctavian/bittorrent-client-control
-
-the above are not yet in hackage so you need to do
-
-cabal sandbox add-source
-
-on each to get those dependencies.
-
-More details on how to build coming soon.
+```bash
+sudo apt-get install ghc cabal nodejs npm # npm to run scripts
+sudo npm install shelljs # js script dependencies
+# cd in the root dir of the repo
+# assumes you will use cabal sandboxes 
+nodejs setup.js 
+```

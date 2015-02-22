@@ -146,7 +146,7 @@ runClient torrentProcPath cachePath serverDesc = do
   Client.clientConnect (ClientConfig btC serverDesc cachePath) $ \c -> do
    debugM logger "client is working..."
    proxyClient 1080 c  
---   clientChunkExchange c
+   clientChunkExchange c
   return ()
 
 runServer torrentProcPath cachePath contact (serverDesc, serverSk) = do
@@ -162,7 +162,7 @@ runServer torrentProcPath cachePath contact (serverDesc, serverSk) = do
     debugM logger "server is working..."
     proxyServer c
     debugM logger "SERVER TERMINATED"
---    serverChunkExchange c
+    serverChunkExchange c
   return ()
 
 -- were are configuring the proxies to redirect the bittorrent traffic

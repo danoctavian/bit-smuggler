@@ -252,7 +252,9 @@ runSimpleProxy = do
 
 
   Proxy.run $  Proxy.Config { Proxy.proxyPort = 1080
-          , Proxy.initHook = \_ _ -> debugM logger "wtf this ran now" >> return Proxy.DataHooks { Proxy.incoming = DC.map P.id
+          , Proxy.initHook = \_ _ -> debugM logger "wtf this ran now"
+                                   >> return Proxy.DataHooks {
+                                                  Proxy.incoming = DC.map P.id
                                                 , Proxy.outgoing = DC.map P.id
                                                 , Proxy.onDisconnect = return ()
                                                }
