@@ -64,7 +64,7 @@ spec = do
   describe "bit-smuggler" $ do
     it "proxies data between 1 client and 1 server" $ do
       P.putStrLn "wtf"
-
+      runClientServer clientChunkExchange serverChunkExchange
   return ()
 
 
@@ -144,8 +144,11 @@ runClientServer clientProto serverProto = runResourceT $ do
                                          `finally` (atomically $ openGate clientDone))
                                  clientUTClientPath clientCache serverDesc
 
-   
- 
+  liftIO $ atomically $ goThroughGate clientDone
+  liftIO $ atomically $ goThroughGate serverDone
+  -- liftIO $ threadDelay $ 10 ^ 9
+
+  liftIO $ debugM logger "finished running integration test" 
   return ()
 
 
@@ -187,7 +190,7 @@ chunks = [ BS.replicate 1000 99, BS.replicate (10 ^ 4)  200
          , BS.replicate (10 ^ 3)  201
          , BS.replicate (10 ^ 3)  202] P.++ smallChunks
 
-smallChunks = P.take 300 $ P.map (BS.replicate (10 ^ 2)) $ P.cycle [1..255]
+smallChunks = P.take 10 $ P.map (BS.replicate (10 ^ 2)) $ P.cycle [1..255]
 
 -- TODO: reabilitate those to use the new connData
 serverChunkExchange c = do
@@ -200,7 +203,7 @@ serverChunks ((chunk, i) : cs) = do
   upstream <- await
   case upstream of
     (Just bigBlock) -> do
-      assert (bigBlock == chunk) (return ())
+      liftIO $ bigBlock `shouldBe` chunk
       liftIO $ debugM logger $ "server received big chunk succesfully " P.++ (show i)
       DC.yield chunk
       serverChunks cs 
@@ -212,7 +215,7 @@ clientChunks ((chunk, i) : cs) = do
   upstream <- await
   case upstream of
     (Just bigBlock) -> do
-      assert (bigBlock == chunk) (return ())
+      liftIO $ bigBlock `shouldBe` chunk
       liftIO $ debugM logger $ "server received big chunk succesfully " P.++ (show i)
       clientChunks cs 
     Nothing -> (liftIO $ debugM logger "terminated from upstream") >> return ()
@@ -280,5 +283,3 @@ serverBTClientConfig = BTClientConfig {
     -- host, port, (uname, password)
   , connectToClient = uTorrentConnect
 }
-
-

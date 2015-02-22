@@ -31,7 +31,6 @@ main = do
     2 -> return () -- initCache $ P.tail args
       -- seed, size, filename
     3 -> genRandFile $ P.tail args
-    4 -> runIntegrationTest
   return ()
 
 --initCache a = setupFileCache (a !! 0) (a !! 1) (a !! 2)
