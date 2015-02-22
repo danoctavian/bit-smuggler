@@ -23,3 +23,18 @@ sudo npm install shelljs # js script dependencies
 # assumes you will use cabal sandboxes 
 nodejs setup.js 
 ```
+
+Testing notes 
+-------------
+
+There are 2 test suites:
+
+  * **unit** - (run fast)
+
+  * **integration** - showcases full bitsmuggler functioning
+                  runs really slooooow the first time (generates randomized files)
+                  runs faster the second time around but still pretty slow
+                  to start up because the bittorrent clients need to find each other
+                  (even though they both run on localhost)
+
+
