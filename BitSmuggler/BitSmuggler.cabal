@@ -36,8 +36,8 @@ library
     Network.BitSmuggler.Proxy.Client
     Network.BitSmuggler.Proxy.Common
     Network.BitSmuggler.StreamMultiplex
-  other-modules:       
     Network.BitSmuggler.TorrentClientProc
+  other-modules:       
 
   -- other-extensions:    
   build-depends:       base >=4.7 && <4.8
@@ -170,4 +170,28 @@ Test-Suite integration
                    , hspec >=2.1.2
                    , QuickCheck >=2.7.6 && <2.8
                    , BitSmuggler >=0.1
- 
+                   , tcp-proxy
+                   , shepherd
+                   , bittorrent-client-control
+                   , helligator
+                   , conduit-extra
+                   , conduit
+                   , cereal
+                   , bytestring
+                   , filepath
+                   , torrent
+                   , resourcet
+                   , conduit-extra
+                   , cereal
+                   , cereal-conduit
+                   , transformers
+                   , stm
+                   , async
+                   , hslogger
+                   , binary
+                   , containers
+                   , iproute
+                   , crypto-random
+                   , cprng-aes
+                   , byteable
+                   , text
