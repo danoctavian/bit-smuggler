@@ -8,7 +8,7 @@ unseen, unheard
 ### Intro
 bit-smuggler is a tool designed to allow you to defeat internet censorship by
 tunneling your network traffic through what appears to be a genuine bittorrent peer 
-connection.
+connection, fooling censorship firewalls into thinking it's harmless.
 
 ### Use case 
 
@@ -26,7 +26,7 @@ network traffic through the proxy.
 
 ### In a nutshell
 
-bit-smuggler uses real uTorrent clients to establish a genuine connection between the
+bit-smuggler uses real uTorrent clients to establish a genuine-looking bittorrent connection between the
 client and proxy and then tampers with the data exchanged by the 2 bittorrent clients
 to inject and read its own payload into/from the bittorrent piece messages
 (bittorrent's messages that contain the actual data of the file being transferred).
@@ -40,7 +40,7 @@ to distinguish between the 2.
 #### Why bittorrent as cover
 Reasons:
 
-  * lots of it - high volume, many users -> hard to observe
+  * lots of it - high volume, many users -> hard, expensive to do surveillance on it
     - eg. GHCQ's TEMPORA surveillance system throws away all P2P according to these [snowden docs](http://cryptome.org/2014/06/nsa-spiegel-snowden-14-0618.pdf)
 
   * normally not banned in censoring countries (because fuck copyright)
@@ -91,7 +91,7 @@ Has poor latency since the stream of data is broken down to fit in bittorrent pi
 
 #### Details 
 
-More details on the design of bit-smuggler [here](https://github.com/danoctavian/bit-smuggler/DESIGN.md)
+More details on the design of bit-smuggler [here](https://github.com/danoctavian/bit-smuggler/blob/master/DESIGN.md)
 
 ## Install instructions
 
