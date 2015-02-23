@@ -29,7 +29,6 @@ library
     Network.BitSmuggler.BitTorrentParser
     Network.BitSmuggler.Crypto
     Network.BitSmuggler.Common
-    Network.BitSmuggler.DemoSetup
 
     Network.BitSmuggler.Proxy.Server
     Network.BitSmuggler.Proxy.Client
