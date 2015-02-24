@@ -64,7 +64,7 @@ spec = do
   describe "bit-smuggler" $ do
     it "proxies data between 1 client and 1 server" $ do
       P.putStrLn "wtf"
-      runClientServer clientChunkExchange serverChunkExchange
+      runClientServer clientChunkExchange serverChunkExchange [bigFile]
   return ()
 
 
@@ -101,8 +101,7 @@ makePaths prefix = P.map ((testRoot </> prefix) </> ) ["cache", "utorrent-client
 
 localhostIP = IPv4 $ toIPv4 [127,0,0,1]
 
-runClientServer clientProto serverProto = runResourceT $ do
-  let testFile = bigFile 
+runClientServer clientProto serverProto testFiles = runResourceT $ do
 
   liftIO $ updateGlobalLogger logger  (setLevel DEBUG)
   liftIO $ updateGlobalLogger Tracker.logger  (setLevel DEBUG)
@@ -112,9 +111,9 @@ runClientServer clientProto serverProto = runResourceT $ do
   let [serverCache, serverUTClientPath] = makePaths "server"
   let [clientCache, clientUTClientPath] = makePaths "client"
 
-  contact <- liftIO $ makeContactFile (metadata testFile)
+  contacts <- forM testFiles $ \testFile -> liftIO $ makeContactFile (metadata testFile)
   (serverDesc, serverSk)
-    <- liftIO $ makeServerDescriptor contact localhostIP
+    <- liftIO $ makeServerDescriptor contacts localhostIP
 
   -- launch the tracker
   trackEvents <- liftIO $ newTChanIO
@@ -128,7 +127,7 @@ runClientServer clientProto serverProto = runResourceT $ do
 
   allocAsync $ async $ runServer (\c -> serverProto c
                                         `finally` (atomically $ openGate serverDone))
-                                 serverUTClientPath serverCache contact
+                                 serverUTClientPath serverCache contacts
                                        (serverDesc, serverSk)
 
   liftIO $ debugM logger "booted server.."
@@ -165,7 +164,7 @@ runClient protocol torrentProcPath cachePath serverDesc = do
   Client.clientConnect (ClientConfig btC serverDesc cachePath) protocol 
 
 
-runServer protocol torrentProcPath cachePath contact (serverDesc, serverSk) = do
+runServer protocol torrentProcPath cachePath contacts (serverDesc, serverSk) = do
 
   proc <- uTorrentProc torrentProcPath
   let btC = serverBTClientConfig {
@@ -174,7 +173,7 @@ runServer protocol torrentProcPath cachePath contact (serverDesc, serverSk) = do
                   = redirectToRev (serverAddr serverDesc) clientBTClientConfig 
                }
 
-  Server.listen (ServerConfig serverSk btC [contact] cachePath) protocol
+  Server.listen (ServerConfig serverSk btC contacts cachePath) protocol
 
 
 -- were are configuring the proxies to redirect the bittorrent traffic
@@ -231,14 +230,14 @@ makeContactFile (filePath, infoHash, seed) = do
   return $ FakeFile {seed = seed, torrentFile = t
                     , infoHash = fromJust $ textToInfoHash infoHash}
 
-makeServerDescriptor contact ip = do
+makeServerDescriptor contacts ip = do
   let cprg = cprgCreate $ createTestEntropyPool "leSeed" :: AESRNG
   let (skBytes, next2) = cprgGenerate Crypto.keySize cprg
   let serverSkWord = (fromRight $ DS.decode skBytes :: Key)
   let serverPk = derivePublicKey (fromBytes $ toBytes serverSkWord)
   let serverPkWord = (fromRight $ DS.decode (toBytes serverPk) :: Key)
 
-  return $ (ServerDescriptor ip [contact] serverPkWord
+  return $ (ServerDescriptor ip contacts serverPkWord
             , serverSkWord)
 
 

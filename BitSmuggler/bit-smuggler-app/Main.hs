@@ -17,9 +17,6 @@ import Network.BitSmuggler.Client
 import Network.BitSmuggler.TorrentFile
 import Network.BitSmuggler.Utils
 import Network.BitSmuggler.Common
-import Network.BitSmuggler.DemoSetup
-import Network.BitSmuggler.IntegrationSpec
-
 
 -- currently tiny commandline app to run some manual tests
 main = do
