@@ -67,10 +67,7 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   -- setup the FILE on which the client is working
   -- choose it randomly from the set of contact files
   let possibleContacts = contactFiles $ serverDescriptor
-  pick <- liftIO $ randInt (0, P.length possibleContacts - 1)
-  let contactFile = possibleContacts !! pick
-
-  [file] <- setupContactFiles [contactFile] fileCachePath
+  files <- setupContactFilesLazy possibleContacts fileCachePath
 
 
   -- == CLIENT INITIALIZATION =
@@ -104,7 +101,7 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
 
   clientState <- liftIO $ newTVarIO $ ClientState Nothing 
 
-  let fileFixer = findPieceLoader [file]
+  let fileFixer = findPieceLoader files
  
   let handleConn = handleConnection clientState
                     (cryptoOps, pubKeyRepr) userPipe userGate dataPipes
@@ -123,10 +120,12 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   -- setup proxies (socks and reverse)
   (reverseProxy, forwardProxy) <- startProxies btClientConfig onConn
   
-  -- tell client to start working on file 
+  -- tell client to start working on file chosen at random
+  pick <- liftIO $ randInt (0, P.length files - 1)
+  let firstFile = files !! pick
 
   liftIO $ debugM logger "adding files to bittorrent client..."
-  liftIO $ addTorrents btClientConn (fst btProc) [file]
+  liftIO $ addTorrents btClientConn (fst btProc) [firstFile]
 
   liftIO $ debugM logger "waiting for user handle to execute."
   liftIO $ atomically $ goThroughGate exitGate

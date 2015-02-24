@@ -10,6 +10,7 @@ module Network.BitSmuggler.Common (
   , ContactFile (..)
   , ServerDescriptor (..)
   , setupContactFiles
+  , setupContactFilesLazy
   , createContactFile
   , setupBTClient
   , genRandBytes
