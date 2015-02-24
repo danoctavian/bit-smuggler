@@ -201,5 +201,9 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
     infoM logger "it's a reconnect. nothing to do..."
   return ()
 
+
+-- file replenishing on the client side
+--replenishFile btClientConn btProc files = 
+
 randInt :: (Int, Int) ->  IO Int 
 randInt range = getStdGen >>= return . fst . (randomR range)

@@ -67,8 +67,6 @@ spec = do
       runClientServer clientChunkExchange serverChunkExchange [bigFile]
   return ()
 
-
-
 {-
 
 Integration test for bitsmuggler with 1 server and 1 client
@@ -80,8 +78,7 @@ testRoot = "test-data/integration-test/"
 
 
 data TestFile = TestFile {metadata :: (FilePath, Text, Int), fileDataPath :: String}
---2 gb file?
-
+--1 gb file
 bigFile = TestFile bigTestFile bigTestDataFile
 bigTestFile = (testRoot </> "contactFile/testFileBig.torrent"
                 , "ef967fc9d342a4ba5c4604c7b9f7b28e9e740b2f"

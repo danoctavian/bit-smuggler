@@ -18,7 +18,6 @@ cabal-version:       >=1.10
 library
   -- TODO: rethink which modules are hidden and which are public
   exposed-modules:     
-    Network.BitSmuggler.BitTorrentSimulator
     Network.BitSmuggler.Utils
     Network.BitSmuggler.Server
     Network.BitSmuggler.Client
@@ -35,6 +34,7 @@ library
     Network.BitSmuggler.Proxy.Common
     Network.BitSmuggler.StreamMultiplex
     Network.BitSmuggler.TorrentClientProc
+    Network.BitSmuggler.Fuckarounds
   other-modules:       
 
   -- other-extensions:    
