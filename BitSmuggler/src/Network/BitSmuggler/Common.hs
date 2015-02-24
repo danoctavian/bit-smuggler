@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards, OverloadedStrings #-}
 {-# LANGUAGE PackageImports #-}
 {-# LANGUAGE RankNTypes #-}
-
+{-# LANGUAGE TupleSections #-}
 
 module Network.BitSmuggler.Common (
     ConnData (..)
@@ -55,6 +55,8 @@ import Data.Map as Map
 import Data.Random.RVar
 import Data.Random.Extras
 import Data.Random.Source.DevRandom
+
+import System.IO.Unsafe
 
 import Network.BitSmuggler.Crypto (Key)
 import Network.BitSmuggler.Utils
@@ -134,14 +136,20 @@ setupBTClient config = do
   return ((proc, btClient), conn)
 
 
-setupContactFiles contactFiles fileCachePath = do
+setupContactFiles contactFiles fileCachePath = setupContacts contactFiles fileCachePath id 
+
+-- this performs lazy IO
+setupContactFilesLazy contactFiles fileCachePath
+  = setupContacts contactFiles fileCachePath (return . unsafePerformIO)
+
+setupContacts  contactFiles fileCachePath execute = do
   (_, cache) <- allocate (FC.load fileCachePath :: IO (FileCache InfoHash))
                  FC.close
-
   -- this dir will be deleted *recursively* when resource is cleared
   (_, contactsDir) <- createTempDirectory Nothing "contactFiles"
 
-  forM contactFiles $ \f -> liftIO $ createContactFile f cache contactsDir
+  forM contactFiles $ \f -> fmap (infoHash f,) $
+                          liftIO $ execute $ createContactFile f cache contactsDir
 
 
 createContactFile contactFile cache dir = 
@@ -166,7 +174,7 @@ createContactFile contactFile cache dir =
       when (computedIH /= infoHash) $ throwIO TorrentFileIntegrityFail
 -}
 
-      return (infoHash, (dataFile, tFileContent))
+      return (dataFile, tFileContent)
 
     RealFile {..} -> errorM logger "real files not supported"
                      >> throwIO UnsupportedFeature

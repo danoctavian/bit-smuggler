@@ -42,6 +42,8 @@ import Network.BitSmuggler.ARQ as ARQ
 import Data.Map.Strict as Map
 import Data.Set as Set
 
+import System.IO.Unsafe
+
 {-
 
 SERVER.
