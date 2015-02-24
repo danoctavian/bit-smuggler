@@ -40,18 +40,8 @@ data Block = Block { blockOffset :: Int        -- ^ offset of this block within 
                    , blockSize   :: BlockSize  -- ^ size of this block within the piece
                    } deriving (Eq, Ord, Show)
 
-data Message = KeepAlive
-             | Choke
-             | Unchoke
-             | Interested
-             | NotInterested
-             | Have PieceNum
-             | BitField BitField
-             | Request PieceNum Block
-             | Piece {index :: PieceNum, begin :: Int, block :: BS.ByteString}
-             | Cancel PieceNum Block
-             | Port Integer
-             | Unknown ByteString -- covering all other unknown protocol fields
+data Message = Piece {index :: PieceNum, begin :: Int, block :: BS.ByteString}
+             | Unknown ByteString -- covering all other uninteresting protocol messages
   deriving (Eq, Show)
 
 
@@ -66,9 +56,6 @@ type PeerID = Word160
 -- | The Protocol header for the Peer Wire Protocol
 protocolHeader = "BitTorrent protocol"
 protocolHeaderSize = BS.length protocolHeader
-
-p8 :: Word8 -> Put
-p8 = putWord8
 
 p32be :: Integral a => a -> Put
 p32be = putWord32be . fromIntegral
@@ -89,56 +76,18 @@ getMsgChunk = do
   MsgChunk len <$> (DS.isolate (fromIntegral len) get)
 
 instance Serialize Message where
-  put KeepAlive       = return ()
-  put Choke           = p8 0
-  put Unchoke         = p8 1
-  put Interested      = p8 2
-  put NotInterested   = p8 3
-  put (Have pn)       = p8 4 *> p32be pn
-  put (BitField bf)   = p8 5 *> putLazyByteString bf
-  put (Request pn (Block os sz))
-                      = p8 6 *> CM.mapM_ p32be [pn,os,sz]
-  put (Piece pn os c) = p8 7 *> CM.mapM_ p32be [pn,os] *> putByteString c
-  put (Cancel pn (Block os sz))
-                      = p8 8 *> CM.mapM_ p32be [pn,os,sz]
-  put (Port p)        = p8 9 *> (putWord16be . fromIntegral $ p)
+  put (Piece pn os c) = putWord8 7 *> CM.mapM_ p32be [pn,os] *> putByteString c
   put (Unknown content) = putByteString content
   
-  get =  getKA      <|> getChoke
-     <|> getUnchoke <|> getIntr
-     <|> getNI      <|> getHave
-     <|> getBF      <|> getReq
-     <|> getPiece   <|> getCancel
-     <|> getPort    <|> getUnknown
+  get =  getPiece <|> getUnknown
 
-getChoke   = byte 0 *> return Choke
-getUnchoke = byte 1 *> return Unchoke
-getIntr    = byte 2 *> return Interested
-getNI      = byte 3 *> return NotInterested
-getHave    = byte 4 *> (Have <$> gw32)
-getBF      = byte 5 *> (BitField <$> (remaining >>= getLazyByteString . fromIntegral))
-getReq     = byte 6 *> (Request  <$> gw32 <*> (Block <$> gw32 <*> gw32))
 getPiece   = byte 7 *> (Piece    <$> gw32
                                  <*> gw32
                                  <*> (remaining >>= getByteString))
-getCancel  = byte 8 *> (Cancel   <$> gw32 <*> (Block <$> gw32 <*> gw32))
-getPort    = byte 9 *> (Port . fromIntegral <$> getWord16be)
-getUnknown = Unknown<$> (remaining >>= getByteString)
-
-getKA      = do
-    empty <- isEmpty
-    if empty
-        then return KeepAlive
-        else fail "Non empty message - not a KeepAlive"
+getUnknown = Unknown <$> (remaining >>= getByteString)
 
 gw32 :: Integral a => Get a
 gw32 = fromIntegral <$> getWord32be
-
-toBS :: String -> BS.ByteString
-toBS = BS.pack . P.map toW8
-
-toW8 :: Char -> Word8
-toW8 = fromIntegral . ord
 
 runTestParse = do
   let testFile = "test-data/seedClientCapture"
