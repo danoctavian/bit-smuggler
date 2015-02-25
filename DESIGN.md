@@ -94,6 +94,26 @@ with djb's [elligator](http://cr.yp.to/elligator/elligator-20130527.pdf)
 then they both derive a shared secret and use that to encrypt the rest of the 
 communication. (see the crypto code and a diagram [here](https://github.com/danoctavian/bit-smuggler/blob/master/BitSmuggler/src/Network/BitSmuggler/Crypto.hs) )
 
+
+## System architecture
+
+BitSmuggler consists of a client and a server. Both the client and the server run a bittorrent instance and capture its traffic using socks (for outgoing connections) and a 
+reverse proxy (for incoming connections). 
+
+The Bitsmuggler process orchestrates the whole thing sending commands to the bittorrent clients and having hooks to read/write the tcp streams passing through the sockets.
+
+See [diagram](https://github.com/danoctavian/bit-smuggler/blob/master/docs/system-components.jpg) for a visual representation of the components of the system.
+
+The reverse proxy works by setting IPTABLES rules to redirect all traffic aimed at the
+bittorrent port to the port of the proxy, which will then redirect itself to the bittorrent
+client.
+
+```bash
+# this sends all traffic aimedat 6881 to the proxy listening locally on 4001
+sudo iptables -t nat -A PREROUTING -p tcp --dport 6881 -j DNAT --to 127.0.0.1:4001
+```
+
+
 ## Protocols
 
 The client and server talk by storing data in the data section of [BitTorrent piece messages](https://wiki.theory.org/BitTorrentSpecification#piece:_.3Clen.3D0009.2BX.3E.3Cid.3D7.3E.3Cindex.3E.3Cbegin.3E.3Cblock.3E)

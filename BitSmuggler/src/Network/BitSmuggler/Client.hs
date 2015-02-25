@@ -17,7 +17,7 @@ import Control.Concurrent.STM.TVar
 import Data.Conduit as DC
 import Data.Conduit.List as DC
 
-
+import Network.BitTorrent.ClientControl
 import Network.TCP.Proxy.Server as Proxy hiding (UnsupportedFeature, logger)
 
 import Network.BitSmuggler.Common
@@ -64,8 +64,6 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   -- start torrent client (with config)
   (btProc, btClientConn) <- setupBTClient $ btClientConfig
 
-  -- setup the FILE on which the client is working
-  -- choose it randomly from the set of contact files
   let possibleContacts = contactFiles $ serverDescriptor
   files <- setupContactFilesLazy possibleContacts fileCachePath
 
@@ -121,8 +119,7 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   (reverseProxy, forwardProxy) <- startProxies btClientConfig onConn
   
   -- tell client to start working on file chosen at random
-  pick <- liftIO $ randInt (0, P.length files - 1)
-  let firstFile = files !! pick
+  firstFile <- pickRandFile files
 
   liftIO $ debugM logger "adding files to bittorrent client..."
   liftIO $ addTorrents btClientConn (fst btProc) [firstFile]
@@ -149,7 +146,6 @@ clientProxyInit handleConn onConnLoss pieceHs fileFix serverAddress direction lo
     return $ DataHooks { incoming = P.fst streams
                          , outgoing = P.snd streams 
                          , onDisconnect = onConnLoss
-                            -- TODO: implement 
                         }
 
   -- it's some other connection - just proxy data without any 
@@ -202,7 +198,19 @@ handleConnection stateVar  (cryptoOps, repr) userPipe userGate
 
 
 -- file replenishing on the client side
---replenishFile btClientConn btProc files = 
+replenishTorrentFile btClientConn btProc files current = do
+  threadDelay $ 5 * milli -- check every 5s
+  [t] <- listTorrents btClientConn
+  if isUsedUp t || isStale t
+  then do   
+    removeTorrentWithData btClientConn (P.fst current) -- remove the old
+    nextFile <- pickRandFile files
+    giveClientPartialFile btClientConn btProc nextFile
+  else replenishTorrentFile btClientConn btProc files current -- keep going
+
+isStale = undefined
+
+pickRandFile files = fmap (files !!) $ liftIO $ randInt (0, P.length files - 1)
 
 randInt :: (Int, Int) ->  IO Int 
 randInt range = getStdGen >>= return . fst . (randomR range)

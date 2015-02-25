@@ -42,8 +42,6 @@ import Network.BitSmuggler.ARQ as ARQ
 import Data.Map.Strict as Map
 import Data.Set as Set
 
-import System.IO.Unsafe
-
 {-
 
 SERVER.
@@ -296,11 +294,8 @@ replenishFiles btClientConn btProc files = runResourceT $ do
 
 replenishWorker btClientConn btProc files jobQueue underWork = forever $ do
   infoHash <- atomically $ readTQueue jobQueue
-  let diskFilePaths = fromJust $ P.lookup infoHash files
-  -- pull out the file 
-  removeTorrentWithData btClientConn infoHash
 
-  giveClientPartialFile btClientConn btProc (infoHash, diskFilePaths) 
+  replenishFile btClientConn btProc files infoHash 
   -- once it's done it's no longer under work
   atomically $ modifyTVar underWork (Set.delete infoHash)
 

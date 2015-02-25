@@ -22,9 +22,11 @@ module Network.BitSmuggler.Common (
   , giveClientPartialFile
   , isUsedUp
   , expectedMaxProgress
+  , replenishFile
 ) where
 
 import Prelude as P
+import Data.Maybe
 import Data.IP
 import Data.ByteString
 import Data.Torrent as TF
@@ -319,5 +321,16 @@ revProxy ip port = return $ ProxyAction {
                           , remoteAddr = (Right ip, port)
                           , onConnection = \ _ -> return () 
                           }
+
+
+-- == FILE REPLENISHING ==
+
+replenishFile btClientConn btProc files infoHash = do
+  let diskFilePaths = fromJust $ P.lookup infoHash files
+  -- pull out the file 
+  removeTorrentWithData btClientConn infoHash
+
+  giveClientPartialFile btClientConn btProc (infoHash, diskFilePaths)
+
 
 
