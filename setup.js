@@ -27,9 +27,6 @@ function makeNixVersion(os) {
 
 // download the client linux utorrent 
 function downloadUTServer(target) {
-  // TODO remove
-  sh.cp("/home/dan/junk/utserver.tar.gz", target)
-  return 
   var file = fs.createWriteStream(target)
   var url = "http://download-new.utorrent.com/os/" + makeNixVersion(getNixDistro()) + "/track/beta/endpoint/utserver/"
   var request = http.get(url, function(response) {response.pipe(file)})

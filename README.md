@@ -98,6 +98,8 @@ More details on the design of bit-smuggler [here](https://github.com/danoctavian
 Instructions are Ubuntu specific and this has been verified to work on
 Ubuntu 12.04 correctly.
 
+The code of the project is in the BitSmuggler dir. Please ignore ./scripts
+
 ```bash
 sudo apt-get install ghc cabal nodejs npm # npm to run scripts
 sudo npm install shelljs # js script dependencies
