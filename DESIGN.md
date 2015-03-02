@@ -103,7 +103,6 @@ reverse proxy (for incoming connections).
 The Bitsmuggler process orchestrates the whole thing sending commands to the bittorrent clients and having hooks to read/write the tcp streams passing through the sockets.
 
 See [diagram](https://github.com/danoctavian/bit-smuggler/blob/master/docs/system-components.jpg) for a visual representation of the components of the system.
-
 The reverse proxy works by setting IPTABLES rules to redirect all traffic aimed at the
 bittorrent port to the port of the proxy, which will then redirect itself to the bittorrent
 client.
