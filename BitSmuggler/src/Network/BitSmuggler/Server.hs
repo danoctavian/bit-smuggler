@@ -286,7 +286,7 @@ replenishFiles btClientConn btProc files = runResourceT $ do
   forever $ do
     liftIO $ threadDelay $ 5 * milli
     ts <- liftIO $ listTorrents btClientConn
-    forM ts $ \t -> when (isUsedUp t) $ do
+    forM ts $ \t -> when (isUsedUp t  && noSwarm t) $ do
       let ih = torrentID t
       liftIO $ atomically $ do
         underWork <- fmap (Set.member ih) $ readTVar setVar

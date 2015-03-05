@@ -21,6 +21,7 @@ module Network.BitSmuggler.Common (
   , makeRandPartial
   , giveClientPartialFile
   , isUsedUp
+  , noSwarm
   , expectedMaxProgress
   , replenishFile
 ) where
@@ -277,8 +278,9 @@ expectedMaxProgress
 -- is not able to build lengthy connections anymore for both
 -- downstream and upstream (the downstream is the problem here)
 isUsedUp (CC.Torrent {..})
-  = (progress >= expectedMaxProgress - expectedMaxProgress `div` 10)
-    && ((peersConnected == 0 && seedsConnected == 0) || (downSpeed < 10 ^ 4)) 
+  = progress >= expectedMaxProgress - expectedMaxProgress `div` 10
+
+noSwarm (CC.Torrent {..}) = peersConnected == 0 && seedsConnected == 0
 
 -- make a file with only part of the pieces present, chosen at random
 makeRandPartial pieceSize pieceCount origin dest = do

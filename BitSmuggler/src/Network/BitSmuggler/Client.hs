@@ -86,16 +86,6 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   userPipe <- launchPipes packetSize initGoBackNARQ
                           clientEncrypter (decrypt cryptoOps)  dataPipes
   userGate <- liftIO $ newGate -- closed gate
-  exitGate <- liftIO $ newGate
-  -- the provided user handle. runs only when connection started
-  -- (gate opens)
-  allocLinkedAsync $ async $ do
-     atomically $ goThroughGate userGate
-     debugM logger "starting user handler execution"
-     handle $ pipeToConnData userPipe
-     -- after user function executed 
-     flushMsgQueue (pipeSend userPipe)
-     atomically $ openGate exitGate -- signal termination
 
   clientState <- liftIO $ newTVarIO $ ClientState Nothing 
 
@@ -124,9 +114,15 @@ clientConnect (ClientConfig {..}) handle = runResourceT $ do
   liftIO $ debugM logger "adding files to bittorrent client..."
   liftIO $ addTorrents btClientConn (fst btProc) [firstFile]
 
-  liftIO $ debugM logger "waiting for user handle to execute."
-  liftIO $ atomically $ goThroughGate exitGate
-  liftIO $ debugM logger "client is terminated."
+  liftIO $ do
+    debugM logger "waiting for user handle to execute."
+    atomically $ goThroughGate userGate
+    debugM logger "starting user handler execution"
+    handle $ pipeToConnData userPipe
+    -- after user function executed 
+    flushMsgQueue (pipeSend userPipe)
+
+    debugM logger "client is terminated."
 
   return ()
 
