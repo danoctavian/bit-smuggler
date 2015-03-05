@@ -142,6 +142,9 @@ cd BitSmuggler
 # this install haskell dependencies in a haskell sandbox that setup.js created
 # yeah, i'm forcing you to use sandboxes. don't question this ok?
 cabal install --dependencies-only --enable-tests
+
+# to check that everything is good, just build.
+cabal build
 ```
 
 
@@ -159,3 +162,14 @@ There are 2 test suites:
                   to start up because the bittorrent clients need to find each other
                   (even though they both run on localhost)
 
+To run each test suite, run:
+
+```bash
+cabal test unit
+# OR
+cabal test integration 
+# for both simply run:
+cabal test
+```
+
+There's currently an issue with the integration test which just hangs once its done. so you need to ctrl-c out of it.
