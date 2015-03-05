@@ -173,3 +173,10 @@ cabal test
 ```
 
 There's currently an issue with the integration test which just hangs once its done. so you need to ctrl-c out of it.
+
+Deployable proxy app 
+--------------------
+
+Coming soon. An easy to setup server and client that work together.
+
+
