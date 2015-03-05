@@ -141,7 +141,7 @@ cd BitSmuggler
 
 # this install haskell dependencies in a haskell sandbox that setup.js created
 # yeah, i'm forcing you to use sandboxes. don't question this ok?
-cabal install --dependencies-only
+cabal install --dependencies-only --enable-tests
 ```
 
 
