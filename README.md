@@ -100,13 +100,50 @@ Ubuntu 12.04 correctly.
 
 The code of the project is in the BitSmuggler dir. Please ignore ./scripts
 
+Haskell dependencies:
+
+* ghc  7.8.2 -> the compiler
+
+* cabal 1.20.0 -> the package system; greater version is also good. i know empirically this 1 works well
+
+Your os distro might have them in its repositories or it might not. 
+
+For **GHC**, go here https://www.haskell.org/ghc/download_ghc_7_8_2 and get the binary for your distro.
+
+For **Cabal** do the following:
+
 ```bash
-sudo apt-get install ghc cabal nodejs npm # npm to run scripts
+sudo apt-get install cabal # or equivalent for your distro
+cabal update
+cabal install cabal-install 
+# this last command should have installed the latest version of cabal in ~/.cabal/bin
+# give priority to that executable; you can add the following to your .bashrc or whatever
+export PATH=$HOME/.cabal/bin:$PATH 
+```
+
+I highly recommend using sandboxes for haskell code. They are like virtualenvs for python. 
+The following instructions and the setup.js script assume you will use sandboxes. sorry abouthat.
+
+Script dependencies:
+
+```bash
+sudo apt-get install nodejs npm
 sudo npm install shelljs # js script dependencies
+```
+
+To setup the project do the following (starting from root of the repo)
+
+```bash
 # cd in the root dir of the repo
 # assumes you will use cabal sandboxes 
 nodejs setup.js 
+cd BitSmuggler
+
+# this install haskell dependencies in a haskell sandbox that setup.js created
+# yeah, i'm forcing you to use sandboxes. don't question this ok?
+cabal install --dependencies-only
 ```
+
 
 Testing notes 
 -------------

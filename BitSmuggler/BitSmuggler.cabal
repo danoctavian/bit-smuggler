@@ -34,7 +34,6 @@ library
     Network.BitSmuggler.Proxy.Common
     Network.BitSmuggler.StreamMultiplex
     Network.BitSmuggler.TorrentClientProc
-    Network.BitSmuggler.Fuckarounds
   other-modules:       
 
   -- other-extensions:    
