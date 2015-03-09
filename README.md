@@ -9,8 +9,6 @@ unseen, unheard
 
 China started [killing VPN connections](http://www.bbc.com/news/technology-30982198).
 
-![alt text](https://github.com/danoctavian/bit-smuggler/blob/master/docs/system-components.png "Title")
-
 watcha gonna do.
 
 bit-smuggler might be the tool for you. keep those pesky internet censors off your back, get your tweets through and read your wikipedia in peace.

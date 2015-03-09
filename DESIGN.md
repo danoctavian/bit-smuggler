@@ -95,12 +95,18 @@ then they both derive a shared secret and use that to encrypt the rest of the
 communication. (see the crypto code and a diagram [here](https://github.com/danoctavian/bit-smuggler/blob/master/BitSmuggler/src/Network/BitSmuggler/Crypto.hs) )
 
 
+ ![alt text](https://github.com/danoctavian/bit-smuggler/blob/master/docs/crypto.png "Crypto")
+
 ## System architecture
 
 BitSmuggler consists of a client and a server. Both the client and the server run a bittorrent instance and capture its traffic using socks (for outgoing connections) and a 
 reverse proxy (for incoming connections). 
 
 The Bitsmuggler process orchestrates the whole thing sending commands to the bittorrent clients and having hooks to read/write the tcp streams passing through the sockets.
+
+See a diagram for system components below.
+
+ ![alt text](https://github.com/danoctavian/bit-smuggler/blob/master/docs/system-components.png "System architecture")
 
 See [diagram](https://github.com/danoctavian/bit-smuggler/blob/master/docs/system-components.jpg) for a visual representation of the components of the system.
 The reverse proxy works by setting IPTABLES rules to redirect all traffic aimed at the
