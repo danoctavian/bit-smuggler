@@ -6,6 +6,15 @@ unseen, unheard
 ## Description
 
 ### Intro
+
+China started [killing VPN connections](http://www.bbc.com/news/technology-30982198).
+
+![alt text](https://github.com/danoctavian/bit-smuggler/blob/master/docs/system-components.jpg "Title")
+
+watcha gonna do.
+
+bit-smuggler might be the tool for you. keep those pesky internet censors off your back, get your tweets through and read your wikipedia in peace.
+
 bit-smuggler is a tool designed to allow you to defeat internet censorship by
 tunneling your network traffic through what appears to be a genuine bittorrent peer 
 connection, fooling censorship firewalls into thinking it's harmless.
