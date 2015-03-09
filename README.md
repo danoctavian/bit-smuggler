@@ -401,15 +401,15 @@ to counter new circumvention methods takes time and money
 
 This is a list of ways in which bit-smuggler uses bittorrent in strange ways that **may allow an adversary to fingeprint it**. It's up for debate whether these are acceptable trade-offs or not.
 
-0. **Breaks .torrent file checksums** The data being transmitted in a bittorrent file exchange
+1. **Breaks .torrent file checksums** The data being transmitted in a bittorrent file exchange
 which is tampered with by bit-smuggler does not match checksums specified in the .torrent file. This is because bit-smuggler inserts encrypted payloads in real-time, and it cannot find a hash collision to match the checksum or pre- prepare the file so that checksums match. As stated this allows an adversary to detect a bit-smuggler connection if he manages to reconstruct the TCP stream, compute the hashes and check against the pieces reassembled from the stream.
 
-1. **File content**.  files are just random data, generated with a pseudo-random generator using an integer seed. So an entropy analysis of the the file may be a give-away (the fact that it doesn't look like anything really) and also the fact that right now the percentage of the file that is available is fixed (1/2). 
+2. **File content**.  files are just random data, generated with a pseudo-random generator using an integer seed. So an entropy analysis of the the file may be a give-away (the fact that it doesn't look like anything really) and also the fact that right now the percentage of the file that is available is fixed (1/2). 
 
 a solution here is to use real existing files, but this involves pre downloading them (fetch pirates of the Caribbean 3 first and then torrent it again with your bit-smuggler server).  how much of the file is available can be randomized.
 
 
-2. **Contact files**. Another aspect is that the server now works by advertising a set of so called contact files. those contact files are bittorrent files that a client needs to start downloading to tunnel a bit-smuggler connection through them. They are partially completed files (1/2 of the pieces are there). Once they are depleted (all downloadable pieces are downloaded) the file is removed and a new partial copy is placed in, to allow for new peer connections on that contact file to have plenty of data flowing back and forth. 
+3. **Contact files**. Another aspect is that the server now works by advertising a set of so called contact files. those contact files are bittorrent files that a client needs to start downloading to tunnel a bit-smuggler connection through them. They are partially completed files (1/2 of the pieces are there). Once they are depleted (all downloadable pieces are downloaded) the file is removed and a new partial copy is placed in, to allow for new peer connections on that contact file to have plenty of data flowing back and forth. 
 
 This aspect that the server keeps refreshing its files is odd.
 
@@ -421,7 +421,7 @@ Possible ways:
 * the client can make a DHT request for the server, and the server would reply with a set of nodes, but the data in the reply contains data about what contact file the client should use, so not a correct DHT query response.
 * ue the bifield message of bittorrent to do a request-response sequence between the bitsmuggler server and client about what contact file to use and then switch to it.
 
-3. Upload slots per torrent = 1 . the client and server instruct their bittorrent clients to upload to a single peer. basically i'm restricting swarms to a size of 2 to load balance things. if i disable this it would just mean the file gets depleated faster. 
+4. **Upload slots per torrent = 1** . the client and server instruct their bittorrent clients to upload to a single peer. basically i'm restricting swarms to a size of 2 to load balance things. if i disable this it would just mean the file gets depleated faster. 
 
 So actually, given this setting, an outsider joining a swarm where a bit-smuggler server and client live would not actually be able to download.
 
