@@ -9,7 +9,7 @@ unseen, unheard
 
 China started [killing VPN connections](http://www.bbc.com/news/technology-30982198).
 
-![alt text](https://github.com/danoctavian/bit-smuggler/blob/master/docs/system-components.jpg "Title")
+![alt text](https://github.com/danoctavian/bit-smuggler/blob/master/docs/system-components.png "Title")
 
 watcha gonna do.
 
