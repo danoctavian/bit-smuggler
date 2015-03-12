@@ -51,7 +51,7 @@ to distinguish between the 2.
 Reasons:
 
   * lots of it - high volume, many users -> hard, expensive to do surveillance on it
-    - eg. GHCQ's TEMPORA surveillance system throws away all P2P according to these [snowden docs](http://cryptome.org/2014/06/nsa-spiegel-snowden-14-0618.pdf) (see page 183)
+    - eg. GCHQ's TEMPORA surveillance system throws away all P2P according to these [snowden docs](http://cryptome.org/2014/06/nsa-spiegel-snowden-14-0618.pdf) (see page 183)
 
   * normally not banned in censoring countries (because fuck copyright)
 
