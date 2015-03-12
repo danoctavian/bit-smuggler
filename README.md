@@ -19,6 +19,9 @@ connection, fooling censorship firewalls into thinking it's harmless.
 
 ### Use case 
 
+ ![alt text](https://github.com/danoctavian/bit-smuggler/blob/master/docs/SmuggleTraffic.png "smuggler")
+
+
 The projects was designed to be used as a [Tor pluggable transport](https://www.torproject.org/docs/pluggable-transports.html.en).
 
 More generally, it's a tunnel between a proxy server and a client connecting to it that is
