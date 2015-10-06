@@ -240,7 +240,7 @@ both client and server generate these files ahead of time knowing the integer se
 
 
 They can be real files but that involes pulling the data of the respective file
-(eg. Pirates of the Carribean) ahead of time.
+(eg. Pirates of the Caribbean) ahead of time.
 
 This is considered good enough since, as discussed in the README.md, it doesn't make it
 easier to detect in real-time and bit-smuggler will be detected anyway on a slow path.
